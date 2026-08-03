@@ -1,0 +1,18 @@
+project_id = "mealmate"
+
+[auth]
+enable_anonymous_sign_ins = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["mealmate://auth/callback", "exp://192.168.68.54:4174/--/auth/callback"]
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_confirmations = false
+max_frequency = "1m"
+otp_length = 8
+
+[functions.parse-recipe]
+verify_jwt = true

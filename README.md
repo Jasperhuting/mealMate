@@ -1,56 +1,58 @@
-# Welcome to your Expo app 👋
+# MealMate
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+MealMate helpt huishoudens samen recepten onthouden, een weekmenu plannen en daar automatisch een boodschappenlijst van maken.
 
-## Get started
+## Wat nu al werkt
 
-1. Install dependencies
+- automatisch weekmenu voor de komende maandag tot en met zondag;
+- een gerecht kiezen of vervangen;
+- vóór het plannen aangeven welke ingrediënten al in huis zijn;
+- automatische boodschappenlijst per winkelafdeling;
+- losse boodschappen toevoegen, afvinken en verwijderen;
+- per product zien voor welk gerecht het nodig is;
+- boodschappen afvinken en tussen sessies synchroniseren;
+- persoonlijke beoordelingen voor Jasper en Lisanne in het gedeelde huishouden;
+- zelf gerechten met ingrediënten en een foto toevoegen en beveiligd in Supabase bewaren;
+- recepttekst, een link, screenshot of kookboekfoto door AI laten omzetten naar een invulbaar recept;
+- overzicht van het gedeelde huishouden.
+- een eenmalige gezinscode maken en op een ander toestel deelnemen aan hetzelfde huishouden.
+- registreren en inloggen via Apple of Google, met een afgeschermde app totdat de sessie geldig is.
 
-   ```bash
-   npm install
-   ```
+MealMate begint met een leeg huishouden. Recepten, ingrediënten, receptfoto's, weekmenu, voorraadkeuzes, boodschappen en persoonlijke beoordelingen worden in Supabase opgeslagen; een lokale cache houdt de laatst geladen recepten beschikbaar.
 
-2. Start the app
+## Starten
 
-   ```bash
-   npx expo start
-   ```
+1. Installeer de afhankelijkheden met `npm install`.
+2. Start de app met `npm start`.
+3. Druk op `i` voor de iOS-simulator of scan de QR-code met Expo Go.
 
-In the output, you'll find options to open the app in a
+Voor een webweergave kun je `npm run web` gebruiken.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Supabase
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+MealMate is gekoppeld aan een eigen Supabase-project in `eu-central-1`. De database bevat profielen, huishoudens, recepten, ingrediënten, weekplannen, beoordelingen en boodschappen. Row Level Security beperkt toegang tot leden van hetzelfde huishouden en receptfoto's staan in een privébucket.
 
-## Get a fresh project
+Totdat het accountscherm af is, meldt de app een nieuw apparaat automatisch anoniem aan en maakt hij één huishouden aan. Dit account kan later aan een definitieve inlogmethode worden gekoppeld.
 
-When you're ready, run:
+### AI-recepten activeren
 
-```bash
-npm run reset-project
+De OpenAI-sleutel hoort uitsluitend in Supabase en nooit in de mobiele app. Zet hem als servergeheim en publiceer daarna de beveiligde functie:
+
+```sh
+supabase secrets set OPENAI_API_KEY=...
+supabase secrets set OPENAI_RECIPE_MODEL=gpt-5.6
+supabase functions deploy parse-recipe --use-api
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+De functie vereist een geldige Supabase-gebruiker. Totdat het gezinsaccountscherm er is, maakt de app daarvoor automatisch een anonieme gebruiker aan. Zo kan MealMate recepttekst, links en foto's verwerken zonder de geheime OpenAI-sleutel op de telefoon te bewaren.
 
-### Other setup steps
+De AI-functie is al gepubliceerd; alleen het OpenAI-servergeheim moet nog worden toegevoegd.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Belangrijkste mappen
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `src/app`: schermen en navigatie;
+- `src/state`: lokale MealMate-logica;
+- `src/data`: voorbeeldrecepten en ingrediënten;
+- `src/lib`: voorbereiding op externe diensten;
+- `supabase/functions`: beveiligde AI-verwerking op de server;
+- `supabase/migrations`: databaseschema met toegangsregels.
