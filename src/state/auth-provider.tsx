@@ -18,18 +18,25 @@ import {
 import { Platform } from 'react-native';
 
 import { clearMealMateSessionCache } from '@/lib/mealmate-session';
+import {
+  loadAvatarUrl,
+  removeAvatarImage,
+  uploadAvatarImage,
+} from '@/lib/avatar-repository';
 import { supabase } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
 type AuthContextValue = {
   session: Session | null;
+  avatarUrl: string | null;
   isLoading: boolean;
   signInWithApple: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
+  uploadAvatar: (uri: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
 };
 
@@ -37,8 +44,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isProcessingLink = useRef(false);
+  const userId = session?.user.id;
 
   useEffect(() => {
     let active = true;
@@ -118,6 +127,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const permanentSession = nextSession?.user.is_anonymous ? null : nextSession;
       clearMealMateSessionCache();
       setSession(permanentSession);
+      if (!permanentSession) setAvatarUrl(null);
       if (!isProcessingLink.current) setIsLoading(false);
     });
 
@@ -127,6 +137,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
       listener?.data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!userId) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void loadAvatarUrl(userId)
+      .then((url) => {
+        if (active) setAvatarUrl(url);
+      })
+      .catch((error) => {
+        if (__DEV__) console.warn('Tably avatar laden mislukt', error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   const signInWithApple = useCallback(async () => {
     if (!supabase) throw new Error('Tably kan de inlogservice niet bereiken.');
@@ -221,8 +252,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
     clearMealMateSessionCache();
   }, []);
 
+  const uploadAvatar = useCallback(
+    async (uri: string) => {
+      if (!userId) throw new Error('Log opnieuw in om een profielfoto toe te voegen.');
+      const nextAvatarUrl = await uploadAvatarImage(userId, uri);
+      setAvatarUrl(nextAvatarUrl);
+    },
+    [userId],
+  );
+
   const deleteAccount = useCallback(async () => {
     if (!supabase) throw new Error('Tably kan de accountservice niet bereiken.');
+
+    if (userId) await removeAvatarImage(userId);
 
     const { error } = await supabase.rpc('delete_current_user_account');
     if (error) throw error;
@@ -236,11 +278,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     ]);
     clearMealMateSessionCache();
     setSession(null);
-  }, []);
+  }, [userId]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
+      avatarUrl,
       deleteAccount,
       isLoading,
       signInWithApple,
@@ -248,16 +291,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signInWithGoogle,
       signOut,
       signUpWithEmail,
+      uploadAvatar,
     }),
     [
       isLoading,
       session,
+      avatarUrl,
       deleteAccount,
       signInWithApple,
       signInWithEmail,
       signInWithGoogle,
       signOut,
       signUpWithEmail,
+      uploadAvatar,
     ],
   );
 

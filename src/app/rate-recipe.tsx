@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useAuth } from '@/state/auth-provider';
@@ -127,9 +128,7 @@ export default function RateRecipeScreen() {
         </Text>
 
         <View style={styles.ownRating}>
-          <View style={[styles.avatar, { backgroundColor: currentMember.color }]}>
-            <Text style={styles.avatarText}>{currentMember.initials}</Text>
-          </View>
+          <UserAvatar initial={currentMember.initials} size={52} uri={currentMember.avatarUrl} />
           <Text style={styles.ownLabel}>Jouw beoordeling</Text>
           <Text style={styles.scoreHint}>
             {draftScore ? `${draftScore} van 5 sterren` : 'Kies het aantal sterren'}
@@ -176,9 +175,11 @@ export default function RateRecipeScreen() {
                   <View
                     key={member.id}
                     style={[styles.otherRow, index > 0 && styles.otherRowDivider]}>
-                    <View style={[styles.smallAvatar, { backgroundColor: member.color }]}>
-                      <Text style={styles.smallAvatarText}>{member.initials.slice(0, 1)}</Text>
-                    </View>
+                    <UserAvatar
+                      initial={member.initials.slice(0, 1)}
+                      size={34}
+                      uri={member.avatarUrl}
+                    />
                     <View style={styles.otherCopy}>
                       <Text style={styles.otherName}>{member.name}</Text>
                       <Text style={styles.otherStatus}>

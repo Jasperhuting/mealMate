@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
@@ -9,7 +9,9 @@ import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
+import { recipeMatchesFilters } from '@/lib/recipe-filters';
 import { useMealMate } from '@/state/meal-mate-provider';
+import { useRecipeFilters } from '@/state/recipe-filter-provider';
 
 export default function AddMealScreen() {
   const { dayId } = useLocalSearchParams<{ dayId: string }>();
@@ -24,11 +26,13 @@ export default function AddMealScreen() {
     ratings,
     mealAttendance,
   } = useMealMate();
+  const { filters, activeFilterCount, setFilters, clearFilters } = useRecipeFilters();
   const initialRecipeId = typeof dayId === 'string' ? plannedMeals[dayId] : undefined;
   const initialLeftoverFrom = typeof dayId === 'string' ? leftoverMeals[dayId] : undefined;
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | undefined>();
   const [leftoverFrom, setLeftoverFrom] = useState<string | undefined>();
   const [atHomeIds, setAtHomeIds] = useState<string[]>([]);
+  const [leftoversExpanded, setLeftoversExpanded] = useState(false);
   const selectedRecipe = useMemo(
     () => recipes.find((recipe) => recipe.id === selectedRecipeId),
     [recipes, selectedRecipeId],
@@ -70,7 +74,12 @@ export default function AddMealScreen() {
     return scores.length ? scores.reduce((total, score) => total + score, 0) / scores.length : null;
   }, [eatingMembers, ratings]);
   const sortedRecipes = useMemo(
-    () => [...recipes].sort((a, b) => {
+    () => recipes.filter((recipe) => recipeMatchesFilters(
+      recipe,
+      filters,
+      ratings,
+      eatingMembers.map((member) => member.id),
+    )).sort((a, b) => {
       const aScore = recipeScore(a);
       const bScore = recipeScore(b);
       if (aScore === null && bScore === null) return a.title.localeCompare(b.title, 'nl');
@@ -78,8 +87,47 @@ export default function AddMealScreen() {
       if (bScore === null) return -1;
       return bScore - aScore;
     }),
-    [recipeScore, recipes],
+    [eatingMembers, filters, ratings, recipeScore, recipes],
   );
+
+  const activeFilterLabels = useMemo(() => {
+    const labels: { key: string; label: string }[] = [];
+    if (filters.ingredientNames.length > 0) {
+      labels.push({
+        key: 'ingredients',
+        label: filters.ingredientNames.length === 1
+          ? filters.ingredientNames[0]
+          : `${filters.ingredientNames.length} ingrediënten`,
+      });
+    }
+    if (filters.minimumHouseholdRating !== null) {
+      labels.push({ key: 'household', label: `Samen ★ ${filters.minimumHouseholdRating}+` });
+    }
+    if (filters.memberId && filters.minimumMemberRating !== null) {
+      const member = familyMembers.find((candidate) => candidate.id === filters.memberId);
+      labels.push({
+        key: 'member',
+        label: `${member?.name ?? 'Persoon'} ★ ${filters.minimumMemberRating}+`,
+      });
+    }
+    if (filters.maximumMinutes !== null) {
+      labels.push({ key: 'minutes', label: `Tot ${filters.maximumMinutes} min` });
+    }
+    if (filters.quickAndEasy) labels.push({ key: 'easy', label: 'Snel & makkelijk' });
+    if (filters.neverRated) labels.push({ key: 'unrated', label: 'Nog nooit beoordeeld' });
+    return labels;
+  }, [familyMembers, filters]);
+
+  const removeFilter = (key: string) => {
+    if (key === 'ingredients') setFilters({ ...filters, ingredientNames: [] });
+    if (key === 'household') setFilters({ ...filters, minimumHouseholdRating: null });
+    if (key === 'member') {
+      setFilters({ ...filters, memberId: null, minimumMemberRating: null });
+    }
+    if (key === 'minutes') setFilters({ ...filters, maximumMinutes: null });
+    if (key === 'easy') setFilters({ ...filters, quickAndEasy: false });
+    if (key === 'unrated') setFilters({ ...filters, neverRated: false });
+  };
 
   const selectRecipe = (recipe: Recipe) => {
     setSelectedRecipeId(recipe.id);
@@ -261,7 +309,12 @@ export default function AddMealScreen() {
             ) : null}
             {leftoverOptions.length > 0 ? (
               <View style={styles.leftoverSection}>
-                <View style={styles.leftoverHeading}>
+                <Pressable
+                  onPress={() => setLeftoversExpanded((current) => !current)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${leftoversExpanded ? 'Verberg' : 'Toon'} beschikbare restjes`}
+                  accessibilityState={{ expanded: leftoversExpanded }}
+                  style={({ pressed }) => [styles.leftoverHeading, pressed && styles.pressed]}>
                   <View style={styles.leftoverIcon}>
                     <AppIcon
                       name={{ ios: 'arrow.counterclockwise', android: 'history', web: 'history' }}
@@ -272,11 +325,22 @@ export default function AddMealScreen() {
                   <View style={styles.leftoverHeadingCopy}>
                     <Text style={styles.leftoverTitle}>Restje eten</Text>
                     <Text style={styles.leftoverSubtitle}>
-                      Gebruik een gerecht van eerder deze week opnieuw.
+                      {leftoversExpanded
+                        ? 'Kies een gerecht van eerder deze week.'
+                        : `${leftoverOptions.length} ${leftoverOptions.length === 1 ? 'restje' : 'restjes'} beschikbaar`}
                     </Text>
                   </View>
-                </View>
-                {leftoverOptions.map(({ recipe, sourceDate, sourceDay }) => (
+                  <AppIcon
+                    name={{
+                      ios: leftoversExpanded ? 'chevron.up' : 'chevron.down',
+                      android: leftoversExpanded ? 'expand_less' : 'expand_more',
+                      web: leftoversExpanded ? 'expand_less' : 'expand_more',
+                    }}
+                    tintColor={palette.sageDark}
+                    size={18}
+                  />
+                </Pressable>
+                {leftoversExpanded ? leftoverOptions.map(({ recipe, sourceDate, sourceDay }) => (
                   <Pressable
                     key={`${recipe.id}-${sourceDate}`}
                     onPress={() => selectLeftover(recipe, sourceDate)}
@@ -294,7 +358,7 @@ export default function AddMealScreen() {
                       size={17}
                     />
                   </Pressable>
-                ))}
+                )) : null}
               </View>
             ) : null}
             <Pressable
@@ -317,8 +381,88 @@ export default function AddMealScreen() {
                 size={18}
               />
             </Pressable>
-            <Text style={styles.listTitle}>Jullie recepten</Text>
+            <View style={styles.listHeading}>
+              <View style={styles.listHeadingCopy}>
+                <Text style={styles.listTitle}>
+                  {activeFilterCount > 0 ? 'Gefilterde gerechten' : 'Jullie gerechten'}
+                </Text>
+                <Text style={styles.listCount}>{sortedRecipes.length}</Text>
+              </View>
+              <Pressable
+                onPress={() => router.push({
+                  pathname: '/recipe-filters',
+                  params: { day: day?.isoDate ?? '' },
+                })}
+                accessibilityRole="button"
+                accessibilityLabel={activeFilterCount > 0
+                  ? `Filters openen, ${activeFilterCount} actief`
+                  : 'Filters openen'}
+                style={({ pressed }) => [
+                  styles.filterButton,
+                  activeFilterCount > 0 && styles.filterButtonActive,
+                  pressed && styles.pressed,
+                ]}>
+                <AppIcon
+                  name={{ ios: 'line.3.horizontal.decrease', android: 'filter_alt', web: 'filter_alt' }}
+                  tintColor={activeFilterCount > 0 ? palette.white : palette.sageDark}
+                  size={20}
+                />
+                {activeFilterCount > 0 ? (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            </View>
+            {activeFilterLabels.length > 0 ? (
+              <View style={styles.activeFiltersBlock}>
+                <View style={styles.activeFiltersHeading}>
+                  <Text style={styles.activeFiltersTitle}>Actieve filters</Text>
+                  <Pressable
+                    onPress={clearFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel="Alle filters wissen"
+                    hitSlop={6}>
+                    <Text style={styles.clearFiltersText}>Wis alles</Text>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.activeFilterList}>
+                  {activeFilterLabels.map((filter) => (
+                    <Pressable
+                      key={filter.key}
+                      onPress={() => removeFilter(filter.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filter ${filter.label} verwijderen`}
+                      style={({ pressed }) => [styles.activeFilterChip, pressed && styles.pressed]}>
+                      <Text style={styles.activeFilterChipText}>{filter.label}</Text>
+                      <AppIcon
+                        name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                        tintColor={palette.sageDark}
+                        size={13}
+                      />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
           </View>
+        }
+        ListEmptyComponent={
+          activeFilterCount > 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>Geen gerecht gevonden</Text>
+              <Text style={styles.emptyText}>Pas je filters aan om meer gerechten te zien.</Text>
+              <Pressable
+                onPress={clearFilters}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.emptyButton, pressed && styles.pressed]}>
+                <Text style={styles.emptyButtonText}>Wis alle filters</Text>
+              </Pressable>
+            </View>
+          ) : null
         }
         ItemSeparatorComponent={() => <View style={styles.cardSeparator} />}
         renderItem={({ item }) => {
@@ -414,7 +558,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     padding: spacing.md,
   },
-  leftoverHeading: { alignItems: 'center', flexDirection: 'row' },
+  leftoverHeading: { alignItems: 'center', flexDirection: 'row', minHeight: 44 },
   leftoverIcon: {
     alignItems: 'center',
     backgroundColor: palette.surface,
@@ -460,7 +604,55 @@ const styles = StyleSheet.create({
   newRecipeCopy: { flex: 1, marginHorizontal: spacing.md },
   newRecipeTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
   newRecipeMeta: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
-  listTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginBottom: spacing.md, marginTop: spacing.xl },
+  listHeading: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md, marginTop: spacing.xl },
+  listHeadingCopy: { alignItems: 'baseline', flex: 1, flexDirection: 'row', gap: spacing.sm },
+  listTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
+  listCount: { color: palette.textSoft, fontSize: 12, fontWeight: '700' },
+  filterButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  filterButtonActive: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
+  filterBadge: {
+    alignItems: 'center',
+    backgroundColor: palette.white,
+    borderRadius: radius.pill,
+    height: 17,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 3,
+    top: 3,
+    width: 17,
+  },
+  filterBadgeText: { color: palette.sageDark, fontSize: 9, fontWeight: '800' },
+  activeFiltersBlock: { marginBottom: spacing.md },
+  activeFiltersHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  activeFiltersTitle: { color: palette.textMuted, fontSize: 11, fontWeight: '700' },
+  clearFiltersText: { color: palette.sageDark, fontSize: 11, fontWeight: '700' },
+  activeFilterList: { gap: spacing.sm, paddingTop: spacing.sm },
+  activeFilterChip: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 11,
+  },
+  activeFilterChipText: { color: palette.sageDark, fontSize: 11, fontWeight: '700' },
+  emptyState: { alignItems: 'center', paddingHorizontal: spacing.xl, paddingVertical: spacing.xxl },
+  emptyTitle: { color: palette.text, fontSize: 17, fontWeight: '700' },
+  emptyText: { color: palette.textMuted, fontSize: 13, marginTop: spacing.sm, textAlign: 'center' },
+  emptyButton: { backgroundColor: palette.sageSoft, borderRadius: radius.pill, marginTop: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  emptyButtonText: { color: palette.sageDark, fontSize: 12, fontWeight: '800' },
   cardSeparator: { height: 10 },
   recipeRow: {
     alignItems: 'center',

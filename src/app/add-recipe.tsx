@@ -87,11 +87,15 @@ const prepareSelectedImage = async (asset: ImagePicker.ImagePickerAsset): Promis
 };
 
 export default function AddRecipeScreen() {
-  const { recipeId } = useLocalSearchParams<{ recipeId?: string }>();
+  const { recipeId, allowDelete } = useLocalSearchParams<{
+    recipeId?: string;
+    allowDelete?: string;
+  }>();
   const router = useRouter();
   const { addRecipe, updateRecipe, removeRecipe, getRecipe } = useMealMate();
   const editingRecipe = getRecipe(typeof recipeId === 'string' ? recipeId : undefined);
   const isEditing = typeof recipeId === 'string';
+  const canDeleteRecipe = isEditing && allowDelete === 'true';
   const initialImageUri = existingImageUri(editingRecipe?.image ?? null);
   const titleInputRef = useRef<TextInput>(null);
   const [mode, setMode] = useState<InputMode>(isEditing ? 'manual' : 'ai');
@@ -442,7 +446,7 @@ export default function AddRecipeScreen() {
         </ScrollView>
         {mode === 'manual' ? (
           <View style={styles.stickyFooter}>
-            {isEditing ? (
+            {canDeleteRecipe ? (
               <Pressable
                 onPress={confirmRecipeRemoval}
                 disabled={isSaving || isDeleting}

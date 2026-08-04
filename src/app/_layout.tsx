@@ -1,11 +1,15 @@
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 
 import { AuthLoadingScreen, LoginScreen } from '@/components/mealmate/login-screen';
 import { palette } from '@/constants/mealmate-theme';
 import { AuthProvider, useAuth } from '@/state/auth-provider';
 import { HapticsProvider } from '@/state/haptics-provider';
 import { MealMateProvider } from '@/state/meal-mate-provider';
+import { RecipeFilterProvider } from '@/state/recipe-filter-provider';
+import { ShoppingItemDraftProvider } from '@/state/shopping-item-draft-provider';
+import { clearMealPlanWidgets } from '@/lib/meal-plan-widgets';
 
 const mealMateTheme = {
   ...DefaultTheme,
@@ -34,19 +38,26 @@ export default function RootLayout() {
 
 function AuthenticatedApp() {
   const { session, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && !session) void clearMealPlanWidgets();
+  }, [isLoading, session]);
+
   if (isLoading) return <AuthLoadingScreen />;
   if (!session) return <LoginScreen />;
 
   return (
     <MealMateProvider>
-      <Stack
-          screenOptions={{
-            headerShadowVisible: false,
-            headerStyle: { backgroundColor: palette.background },
-            headerTintColor: palette.text,
-            contentStyle: { backgroundColor: palette.background },
-          }}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <ShoppingItemDraftProvider>
+        <RecipeFilterProvider>
+          <Stack
+            screenOptions={{
+              headerShadowVisible: false,
+              headerStyle: { backgroundColor: palette.background },
+              headerTintColor: palette.text,
+              contentStyle: { backgroundColor: palette.background },
+            }}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="add-recipe"
             options={{
@@ -72,6 +83,38 @@ function AuthenticatedApp() {
             }}
           />
           <Stack.Screen
+            name="change-shopping-department"
+            options={{
+              presentation: 'modal',
+              title: 'Afdeling wijzigen',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
+            name="select-shopping-department"
+            options={{
+              presentation: 'modal',
+              title: 'Afdeling kiezen',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
+            name="shopping-item-actions"
+            options={{
+              presentation: 'modal',
+              title: 'Product',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
+            name="meal-attendance"
+            options={{
+              presentation: 'modal',
+              title: 'Aanwezigheid',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
             name="rate-recipe"
             options={{
               presentation: 'modal',
@@ -84,6 +127,14 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Gerecht',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
+            name="recipe-filters"
+            options={{
+              presentation: 'modal',
+              title: 'Recepten filteren',
               headerBackVisible: false,
             }}
           />
@@ -103,7 +154,9 @@ function AuthenticatedApp() {
               headerBackVisible: false,
             }}
           />
-        </Stack>
+          </Stack>
+        </RecipeFilterProvider>
+      </ShoppingItemDraftProvider>
     </MealMateProvider>
   );
 }

@@ -1,21 +1,19 @@
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
-import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function RecipeDetailScreen() {
   const { recipeId } = useLocalSearchParams<{ recipeId?: string }>();
   const router = useRouter();
-  const { familyMembers, getRecipe, ratings, removeRecipe } = useMealMate();
-  const [isDeleting, setIsDeleting] = useState(false);
+  const { familyMembers, getRecipe, ratings } = useMealMate();
   const recipe = getRecipe(typeof recipeId === 'string' ? recipeId : undefined);
 
   if (!recipe) {
@@ -36,38 +34,6 @@ export default function RecipeDetailScreen() {
       return;
     }
     router.push({ pathname: '/rate-recipe', params: { recipeId: recipe.id } });
-  };
-
-  const deleteRecipe = async () => {
-    setIsDeleting(true);
-    try {
-      await removeRecipe(recipe.id);
-      mealMateHaptics.destructive();
-      router.replace('/recipes');
-    } catch {
-      mealMateHaptics.error();
-      Alert.alert(
-        'Gerecht verwijderen mislukt',
-        'Het gerecht is niet verwijderd. Controleer je internetverbinding en probeer het opnieuw.',
-      );
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const confirmRecipeRemoval = () => {
-    Alert.alert(
-      'Gerecht verwijderen?',
-      `${recipe.title} wordt definitief verwijderd. Eventuele planningen en bijbehorende boodschappen verdwijnen ook.`,
-      [
-        { text: 'Annuleer', style: 'cancel' },
-        {
-          text: 'Verwijder',
-          style: 'destructive',
-          onPress: () => void deleteRecipe(),
-        },
-      ],
-    );
   };
 
   return (
@@ -153,9 +119,11 @@ export default function RecipeDetailScreen() {
                   <View
                     key={member.id}
                     style={[styles.ratingRow, index > 0 && styles.ratingRowDivider]}>
-                    <View style={[styles.avatar, { backgroundColor: member.color }]}>
-                      <Text style={styles.avatarText}>{member.initials.slice(0, 1)}</Text>
-                    </View>
+                    <UserAvatar
+                      initial={member.initials.slice(0, 1)}
+                      size={36}
+                      uri={member.avatarUrl}
+                    />
                     <Text style={styles.memberName}>{member.name}</Text>
                     <View
                       style={styles.memberStars}
@@ -205,29 +173,6 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
-        <Pressable
-          onPress={confirmRecipeRemoval}
-          disabled={isDeleting}
-          accessibilityRole="button"
-          accessibilityLabel={`Verwijder ${recipe.title}`}
-          accessibilityState={{ disabled: isDeleting }}
-          style={({ pressed }) => [
-            styles.deleteButton,
-            (pressed || isDeleting) && styles.pressed,
-          ]}>
-          {isDeleting ? (
-            <ActivityIndicator color={palette.danger} size="small" />
-          ) : (
-            <AppIcon
-              name={{ ios: 'trash', android: 'delete_outline', web: 'delete_outline' }}
-              tintColor={palette.danger}
-              size={18}
-            />
-          )}
-          <Text style={styles.deleteButtonText}>
-            {isDeleting ? 'Gerecht verwijderen…' : 'Gerecht verwijderen'}
-          </Text>
-        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -317,18 +262,6 @@ const styles = StyleSheet.create({
   ingredientRowDivider: { borderTopColor: palette.border, borderTopWidth: 1 },
   ingredientName: { color: palette.text, flex: 1, fontSize: 14, fontWeight: '600' },
   ingredientAmount: { color: palette.textMuted, fontSize: 13, fontWeight: '600', marginLeft: spacing.md },
-  deleteButton: {
-    alignItems: 'center',
-    borderColor: palette.danger,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'center',
-    marginTop: spacing.xxl,
-    minHeight: 50,
-  },
-  deleteButtonText: { color: palette.danger, fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.7 },
   notFound: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: spacing.xl },
   notFoundTitle: { color: palette.text, fontSize: 22, fontWeight: '700' },

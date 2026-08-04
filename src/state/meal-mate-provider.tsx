@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 
 import {
   createWeekDays,
@@ -30,6 +31,7 @@ import { removePersistedRecipeImage } from '@/lib/recipe-image-storage';
 import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import {
   addCloudShoppingItem,
+  loadCloudPlannedMeals,
   loadSharedState,
   removeCloudMealPlan,
   removeCloudShoppingItem,
@@ -40,7 +42,9 @@ import {
   setCloudShoppingItemDepartment,
 } from '@/lib/shared-state-repository';
 import type { LeftoverMeals, MealAttendance } from '@/lib/shared-state-repository';
+import { updateMealPlanWidgets } from '@/lib/meal-plan-widgets';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { useAuth } from '@/state/auth-provider';
 
 type PlannedMeals = Record<string, string | undefined>;
 type Ratings = Record<string, Record<string, number | undefined>>;
@@ -104,7 +108,21 @@ const shoppingId = (name: string, unit: string) =>
 const customRecipesStorageKey = 'mealmate.custom-recipes.v1';
 const shoppingDepartmentsStorageKey = 'mealmate.shopping-departments.v1';
 
+const createWidgetPlanningDays = () => {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+
+  return [0, 1, 2].flatMap((weekOffset) => {
+    const weekStart = new Date(monday);
+    weekStart.setDate(monday.getDate() + weekOffset * 7);
+    return createWeekDays(weekStart);
+  });
+};
+
 export function MealMateProvider({ children }: PropsWithChildren) {
+  const { avatarUrl, session } = useAuth();
   const [customRecipes, setCustomRecipes] = useState<Recipe[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [plannedMeals, setPlannedMeals] = useState<PlannedMeals>({});
@@ -116,6 +134,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
   const [manualShoppingItems, setManualShoppingItems] = useState<ShoppingItem[]>([]);
   const [shoppingDepartments, setShoppingDepartments] = useState<Record<string, Department>>({});
   const [weekDays, setWeekDays] = useState<WeekDay[]>(initialWeekDays);
+  const [isWidgetDataReady, setIsWidgetDataReady] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -155,7 +174,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
 
       if (active) setCustomRecipes(localRecipes);
       if (active) setShoppingDepartments(localShoppingDepartments);
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured) {
+        if (active) setIsWidgetDataReady(true);
+        return;
+      }
 
       try {
         await ensurePeasMakerRecipes();
@@ -167,12 +189,15 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           }
         }
 
-        const sharedState = await loadSharedState(initialWeekDays);
+        const [sharedState, widgetPlannedMeals] = await Promise.all([
+          loadSharedState(initialWeekDays),
+          loadCloudPlannedMeals(createWidgetPlanningDays()),
+        ]);
 
         if (!active) return;
         setCustomRecipes(cloudRecipes);
         setFamilyMembers(sharedState.familyMembers);
-        setPlannedMeals(sharedState.plannedMeals);
+        setPlannedMeals({ ...widgetPlannedMeals, ...sharedState.plannedMeals });
         setLeftoverMeals(sharedState.leftoverMeals);
         setExcludedIngredients(sharedState.excludedIngredients);
         setRatings(sharedState.ratings);
@@ -199,6 +224,8 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       } catch (error) {
         // Bij geen internet blijft de laatst opgeslagen lokale cache beschikbaar.
         if (__DEV__) console.warn('Tably cloud sync failed', error);
+      } finally {
+        if (active) setIsWidgetDataReady(true);
       }
     };
 
@@ -212,10 +239,24 @@ export function MealMateProvider({ children }: PropsWithChildren) {
   const reloadHousehold = useCallback(async () => {
     if (!isSupabaseConfigured) return;
     const cloudRecipes = await loadCloudRecipes();
-    const sharedState = await loadSharedState(weekDays);
+    const widgetPlanningDays = createWidgetPlanningDays();
+    const [sharedState, widgetPlannedMeals] = await Promise.all([
+      loadSharedState(weekDays),
+      loadCloudPlannedMeals(widgetPlanningDays),
+    ]);
     setCustomRecipes(cloudRecipes);
     setFamilyMembers(sharedState.familyMembers);
-    setPlannedMeals(sharedState.plannedMeals);
+    setPlannedMeals((current) => ({
+      ...Object.fromEntries(
+        Object.entries(current).filter(
+          ([isoDate]) =>
+            !widgetPlanningDays.some((day) => day.isoDate === isoDate) &&
+            !weekDays.some((day) => day.isoDate === isoDate),
+        ),
+      ),
+      ...widgetPlannedMeals,
+      ...sharedState.plannedMeals,
+    }));
     setLeftoverMeals(sharedState.leftoverMeals);
     setExcludedIngredients(sharedState.excludedIngredients);
     setRatings(sharedState.ratings);
@@ -292,6 +333,32 @@ export function MealMateProvider({ children }: PropsWithChildren) {
   );
 
   const recipes = useMemo(() => customRecipes, [customRecipes]);
+  const displayedFamilyMembers = useMemo(
+    () =>
+      familyMembers.map((member) =>
+        member.linkedUserId === session?.user.id && avatarUrl
+          ? { ...member, avatarUrl }
+          : member,
+      ),
+    [avatarUrl, familyMembers, session?.user.id],
+  );
+
+  useEffect(() => {
+    if (!isWidgetDataReady) return;
+
+    void updateMealPlanWidgets(plannedMeals, recipes).catch((error) => {
+      if (__DEV__) console.warn('Tably widget update failed', error);
+    });
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void updateMealPlanWidgets(plannedMeals, recipes).catch((error) => {
+        if (__DEV__) console.warn('Tably widget refresh failed', error);
+      });
+    });
+
+    return () => subscription.remove();
+  }, [isWidgetDataReady, plannedMeals, recipes]);
 
   const addRecipe = useCallback(async (input: NewRecipe) => {
     const recipe: Recipe = isSupabaseConfigured
@@ -603,7 +670,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     () => ({
       recipes,
       weekDays,
-      familyMembers,
+      familyMembers: displayedFamilyMembers,
       plannedMeals,
       leftoverMeals,
       ratings,
@@ -630,7 +697,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       weekDays,
       plannedMeals,
       leftoverMeals,
-      familyMembers,
+      displayedFamilyMembers,
       ratings,
       mealAttendance,
       shoppingItems,

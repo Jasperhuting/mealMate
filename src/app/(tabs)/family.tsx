@@ -5,6 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { useMealMate } from '@/state/meal-mate-provider';
 
@@ -39,7 +40,11 @@ export default function FamilyScreen() {
                       styles.bigAvatar,
                       { backgroundColor: member.color, marginLeft: index ? -12 : 0 },
                     ]}>
-                    <Text style={styles.bigAvatarText}>{member.initials}</Text>
+                    {member.avatarUrl ? (
+                      <UserAvatar initial={member.initials} size={42} uri={member.avatarUrl} />
+                    ) : (
+                      <Text style={styles.bigAvatarText}>{member.initials}</Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -60,9 +65,13 @@ export default function FamilyScreen() {
                   : '–';
                 return (
                   <View key={member.id} style={styles.memberCard}>
-                    <View style={[styles.memberAvatar, { backgroundColor: member.color }]}>
-                      <Text style={styles.memberAvatarText}>{member.initials}</Text>
-                    </View>
+                    {member.avatarUrl ? (
+                      <UserAvatar initial={member.initials} size={46} uri={member.avatarUrl} />
+                    ) : (
+                      <View style={[styles.memberAvatar, { backgroundColor: member.color }]}>
+                        <Text style={styles.memberAvatarText}>{member.initials}</Text>
+                      </View>
+                    )}
                     <View style={styles.memberCopy}>
                       <Text style={styles.memberName}>{member.name}</Text>
                       <Text style={styles.memberMeta}>

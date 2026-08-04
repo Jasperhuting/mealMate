@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,9 +15,9 @@ import { AppIcon } from '@/components/mealmate/app-icon';
 import { BrandLogo } from '@/components/mealmate/brand-logo';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import { dateToIso, getWeekRangeLabel, type WeekDay } from '@/data/mock-data';
-import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { getInitial, getUserInitial } from '@/lib/user-initial';
 import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
@@ -26,7 +25,7 @@ import { useMealMate } from '@/state/meal-mate-provider';
 export default function WeekScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, avatarUrl } = useAuth();
   const {
     weekDays,
     plannedMeals,
@@ -36,7 +35,6 @@ export default function WeekScreen() {
     changeWeek,
     familyMembers,
     mealAttendance,
-    setMealAttendance,
   } = useMealMate();
   const [selectedDayId, setSelectedDayId] = useState(() => {
     const currentDayId = dateToIso(new Date());
@@ -45,8 +43,6 @@ export default function WeekScreen() {
       : weekDays[0].isoDate;
   });
   const [isChangingWeek, setIsChangingWeek] = useState(false);
-  const [attendanceDayId, setAttendanceDayId] = useState<string>();
-  const [updatingAttendanceMemberId, setUpdatingAttendanceMemberId] = useState<string>();
   const today = new Date();
   const todayIso = dateToIso(today);
   const todayLabel = today.toLocaleDateString('nl-NL', {
@@ -65,13 +61,6 @@ export default function WeekScreen() {
       (Boolean(member.email) &&
         member.email?.trim().toLowerCase() === session?.user.email?.trim().toLowerCase()),
   );
-  const attendanceDay = weekDays.find((day) => day.isoDate === attendanceDayId);
-  const attendanceRecipe = attendanceDay
-    ? getRecipe(plannedMeals[attendanceDay.isoDate])
-    : undefined;
-  const orderedFamilyMembers = currentMember
-    ? [currentMember, ...familyMembers.filter((member) => member.id !== currentMember.id)]
-    : familyMembers;
   const avatarInitial = getInitial(currentMember?.initials) ?? getUserInitial(session?.user);
 
   const openPlanner = (day: WeekDay) => {
@@ -115,12 +104,12 @@ export default function WeekScreen() {
   const confirmRemove = () => {
     if (!selectedRecipe) return;
     Alert.alert(
-      'Gerecht verwijderen?',
-      `${selectedRecipe.title} wordt van ${selectedDay.label.toLowerCase()} verwijderd.`,
+      'Uit weekplanning halen?',
+      `${selectedRecipe.title} wordt alleen bij ${selectedDay.label.toLowerCase()} weggehaald. Het recept blijft bewaard.`,
       [
         { text: 'Annuleer', style: 'cancel' },
         {
-          text: 'Verwijder',
+          text: 'Haal weg',
           style: 'destructive',
           onPress: () => void removeMeal(selectedDay.isoDate),
         },
@@ -152,7 +141,7 @@ export default function WeekScreen() {
             accessibilityLabel="Open jouw account"
             hitSlop={6}
             style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}>
-            <Text style={styles.avatarText}>{avatarInitial}</Text>
+            <UserAvatar initial={avatarInitial} size={38} uri={avatarUrl} />
           </Pressable>
         </View>
 
@@ -180,15 +169,17 @@ export default function WeekScreen() {
             const leftoverFrom = leftoverMeals[day.isoDate];
             const selected = selectedDay.isoDate === day.isoDate;
             const isToday = day.isoDate === todayIso;
+            const isPast = day.isoDate < todayIso;
             return (
               <Pressable
                 key={day.isoDate}
                 onPress={() => setSelectedDayId(day.isoDate)}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`${day.label} ${day.date} ${day.month}${recipe ? `, ${recipe.title}${leftoverFrom ? ' als restje' : ''} gepland` : ', nog leeg'}`}
+                accessibilityLabel={`${day.label} ${day.date} ${day.month}${isPast ? ', voorbij' : ''}${recipe ? `, ${recipe.title}${leftoverFrom ? ' als restje' : ''} gepland` : ', nog leeg'}`}
                 style={({ pressed }) => [
                   styles.dayButton,
+                  isPast && !selected && styles.dayButtonPast,
                   selected && styles.dayButtonSelected,
                   pressed && styles.pressed,
                 ]}>
@@ -258,6 +249,7 @@ export default function WeekScreen() {
                 ? weekDays.find((candidate) => candidate.isoDate === leftoverFrom)
                 : undefined;
               const selected = day.isoDate === selectedDay.isoDate;
+              const isPast = day.isoDate < todayIso;
               const absentMembers = familyMembers.filter(
                 (member) => mealAttendance[day.isoDate]?.[member.id] === false,
               );
@@ -275,6 +267,7 @@ export default function WeekScreen() {
                   key={day.isoDate}
                   style={[
                     styles.weekRowWrapper,
+                    isPast && !selected && styles.weekRowWrapperPast,
                     selected && styles.weekRowWrapperSelected,
                     index < weekDays.length - 1 && !selected && styles.weekRowDivider,
                   ]}>
@@ -283,7 +276,7 @@ export default function WeekScreen() {
                       onPress={() => setSelectedDayId(day.isoDate)}
                       accessibilityRole="button"
                       accessibilityState={{ selected }}
-                      accessibilityLabel={`Selecteer ${day.label} ${day.date} ${day.month}`}
+                      accessibilityLabel={`Selecteer ${day.label} ${day.date} ${day.month}${isPast ? ', voorbij' : ''}`}
                       style={({ pressed }) => [styles.weekRowDate, pressed && styles.pressed]}>
                       <Text style={[styles.weekRowDay, selected && styles.weekRowDaySelected]}>
                         {day.label}
@@ -351,7 +344,12 @@ export default function WeekScreen() {
                         <View style={styles.selectedRowActions}>
                           {familyMembers.length > 0 ? (
                             <Pressable
-                              onPress={() => setAttendanceDayId(day.isoDate)}
+                              onPress={() =>
+                                router.push({
+                                  pathname: '/meal-attendance',
+                                  params: { dayId: day.isoDate },
+                                })
+                              }
                               accessibilityRole="button"
                               accessibilityLabel={`${attendanceSummary}. Aanwezigheid wijzigen voor ${day.label}`}
                               style={({ pressed }) => [
@@ -381,7 +379,7 @@ export default function WeekScreen() {
                           <Pressable
                             onPress={confirmRemove}
                             accessibilityRole="button"
-                            accessibilityLabel={`${recipe.title} verwijderen van ${day.label}`}
+                            accessibilityLabel={`${recipe.title} uit de weekplanning van ${day.label} halen`}
                             hitSlop={6}
                             style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
                             <AppIcon
@@ -419,110 +417,6 @@ export default function WeekScreen() {
             })}
         </View>
       </ScrollView>
-      <Modal
-        visible={Boolean(attendanceDay)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => !updatingAttendanceMemberId && setAttendanceDayId(undefined)}>
-        <View style={styles.modalOverlay}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Aanwezigheid sluiten"
-            style={StyleSheet.absoluteFill}
-            onPress={() => !updatingAttendanceMemberId && setAttendanceDayId(undefined)}
-          />
-          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalEyebrow}>AANWEZIGHEID</Text>
-            <Text style={styles.modalTitle}>
-              Wie eet er mee op {attendanceDay?.label.toLowerCase()}?
-            </Text>
-            {attendanceRecipe ? (
-              <Text style={styles.modalText}>{attendanceRecipe.title}</Text>
-            ) : null}
-            <ScrollView
-              style={styles.attendanceOptionsScroll}
-              contentContainerStyle={styles.attendanceOptions}
-              showsVerticalScrollIndicator={false}
-              bounces={orderedFamilyMembers.length > 3}>
-              {orderedFamilyMembers.map((member) => {
-                const isCurrentMember = member.id === currentMember?.id;
-                const isEating = attendanceDay
-                  ? mealAttendance[attendanceDay.isoDate]?.[member.id] !== false
-                  : true;
-                const isUpdating = updatingAttendanceMemberId === member.id;
-                return (
-                  <Pressable
-                    key={member.id}
-                    disabled={Boolean(updatingAttendanceMemberId)}
-                    onPress={async () => {
-                      if (!attendanceDay) return;
-                      setUpdatingAttendanceMemberId(member.id);
-                      try {
-                        await setMealAttendance(attendanceDay.isoDate, member.id, !isEating);
-                        mealMateHaptics.selection();
-                      } catch {
-                        mealMateHaptics.error();
-                        Alert.alert('Aanwezigheid opslaan mislukt', 'Probeer het opnieuw.');
-                      } finally {
-                        setUpdatingAttendanceMemberId(undefined);
-                      }
-                    }}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{
-                      checked: isEating,
-                      disabled: Boolean(updatingAttendanceMemberId),
-                    }}
-                    accessibilityLabel={`${isCurrentMember ? 'Jij' : member.name} eet ${isEating ? 'wel' : 'niet'} mee`}
-                    style={({ pressed }) => [
-                      styles.attendanceOption,
-                      isEating && styles.attendanceOptionSelected,
-                      pressed && styles.pressed,
-                    ]}>
-                    <View style={[styles.memberDot, { backgroundColor: member.color }]} />
-                    <View style={styles.attendanceOptionCopy}>
-                      <Text
-                        style={[
-                          styles.attendanceOptionName,
-                          isEating && styles.attendanceOptionNameSelected,
-                        ]}>
-                        {isCurrentMember ? 'Jij' : member.name}
-                      </Text>
-                      <Text style={styles.attendanceOptionStatus}>
-                        {isEating ? 'Eet mee' : 'Eet niet mee'}
-                      </Text>
-                    </View>
-                    {isUpdating ? (
-                      <ActivityIndicator color={palette.sageDark} size="small" />
-                    ) : (
-                      <View
-                        style={[
-                          styles.attendanceCheckbox,
-                          isEating && styles.attendanceCheckboxSelected,
-                        ]}>
-                        {isEating ? (
-                          <AppIcon
-                            name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                            tintColor={palette.white}
-                            size={14}
-                          />
-                        ) : null}
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable
-              onPress={() => setAttendanceDayId(undefined)}
-              disabled={Boolean(updatingAttendanceMemberId)}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.modalDoneButton, pressed && styles.pressed]}>
-              <Text style={styles.modalDoneButtonText}>Klaar</Text>
-            </Pressable>
-          </SafeAreaView>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -586,7 +480,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 38,
   },
-  avatarText: { color: palette.sageDark, fontSize: 12, fontWeight: '800' },
   weekPager: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -620,6 +513,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     paddingVertical: spacing.sm,
   },
+  dayButtonPast: { opacity: 0.48 },
   dayButtonSelected: {
     backgroundColor: palette.sageDark,
   },
@@ -683,6 +577,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   weekRowWrapper: { backgroundColor: palette.surface },
+  weekRowWrapperPast: { opacity: 0.52 },
   weekRowWrapperSelected: {
     backgroundColor: palette.sageSoft,
     borderColor: palette.sage,
@@ -757,68 +652,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   planSelectedDayText: { color: palette.sageDark, fontSize: 13, fontWeight: '700' },
-  modalOverlay: {
-    backgroundColor: 'rgba(24, 28, 23, 0.38)',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: palette.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    flexShrink: 1,
-    maxHeight: '88%',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    backgroundColor: palette.border,
-    borderRadius: radius.pill,
-    height: 4,
-    marginBottom: spacing.lg,
-    width: 44,
-  },
-  modalEyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  modalTitle: { color: palette.text, fontSize: 24, fontWeight: '700', marginTop: spacing.sm },
-  modalText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
-  attendanceOptionsScroll: { flexShrink: 1, marginTop: spacing.lg },
-  attendanceOptions: { gap: spacing.sm },
-  attendanceOption: {
-    alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 62,
-    paddingHorizontal: spacing.lg,
-  },
-  attendanceOptionSelected: { backgroundColor: palette.sageSoft, borderColor: palette.sage },
-  memberDot: { borderRadius: radius.pill, height: 10, width: 10 },
-  attendanceOptionCopy: { flex: 1, marginLeft: spacing.md },
-  attendanceOptionName: { color: palette.text, fontSize: 15, fontWeight: '700' },
-  attendanceOptionNameSelected: { color: palette.sageDark },
-  attendanceOptionStatus: { color: palette.textMuted, fontSize: 12, marginTop: 3 },
-  attendanceCheckbox: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
-  },
-  attendanceCheckboxSelected: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
-  modalDoneButton: {
-    alignItems: 'center',
-    backgroundColor: palette.sageDark,
-    borderRadius: radius.pill,
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
-    minHeight: 48,
-  },
-  modalDoneButtonText: { color: palette.white, fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.7 },
 });

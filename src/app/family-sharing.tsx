@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { inviteFamilyMember } from '@/lib/family-sharing';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
@@ -142,9 +143,7 @@ export default function FamilySharingScreen() {
               <Text style={styles.membersTitle}>Jullie gezin</Text>
               {familyMembers.map((member) => (
                 <View key={member.id} style={styles.memberRow}>
-                  <View style={[styles.avatar, { backgroundColor: member.color }]}>
-                    <Text style={styles.avatarText}>{member.initials}</Text>
-                  </View>
+                  <UserAvatar initial={member.initials} size={38} uri={member.avatarUrl} />
                   <View style={styles.memberCopy}>
                     <Text style={styles.memberName}>{member.name}</Text>
                     <Text style={styles.memberEmail}>{member.email ?? 'Tably-lid'}</Text>

@@ -1,11 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
   Pressable,
-  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -43,19 +39,9 @@ export default function ShoppingScreen() {
     plannedMeals,
     weekDays,
     toggleShoppingItem,
-    removeShoppingItem,
-    updateShoppingItemDepartment,
   } = useMealMate();
   const [groupMode, setGroupMode] = useState<GroupMode>('department');
   const [showCompleted, setShowCompleted] = useState(true);
-  const [actionTarget, setActionTarget] = useState<{
-    itemId: string;
-    canRemove: boolean;
-  }>();
-  const [departmentItemId, setDepartmentItemId] = useState<string>();
-  const [changingDepartment, setChangingDepartment] = useState<Department>();
-  const actionItem = shoppingItems.find((item) => item.id === actionTarget?.itemId);
-  const departmentItem = shoppingItems.find((item) => item.id === departmentItemId);
   const completedCount = completedShoppingIds.filter((id) =>
     shoppingItems.some((item) => item.id === id),
   ).length;
@@ -119,22 +105,6 @@ export default function ShoppingScreen() {
         (recipeOrder.get(b.title) ?? Number.MAX_SAFE_INTEGER),
     );
   }, [completedShoppingIds, groupMode, plannedMeals, recipes, shoppingItems, showCompleted, weekDays]);
-
-  const confirmRemove = (item: ShoppingItem) => {
-    setActionTarget(undefined);
-    Alert.alert(
-      'Los product verwijderen?',
-      `${item.name} wordt van de losse boodschappen verwijderd.${item.recipes.length ? ' Het deel voor jullie gerecht blijft staan.' : ''}`,
-      [
-        { text: 'Annuleer', style: 'cancel' },
-        {
-          text: 'Verwijder',
-          style: 'destructive',
-          onPress: () => void removeShoppingItem(item.id),
-        },
-      ],
-    );
-  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -249,9 +219,12 @@ export default function ShoppingScreen() {
             completed={completedShoppingIds.includes(listItem.item.id)}
             onToggle={() => void toggleItem(listItem.item)}
             onOpenActions={() =>
-              setActionTarget({
-                itemId: listItem.item.id,
-                canRemove: listItem.showRemove,
+              router.push({
+                pathname: '/shopping-item-actions',
+                params: {
+                  itemId: listItem.item.id,
+                  canRemove: String(listItem.showRemove),
+                },
               })
             }
           />
@@ -269,152 +242,6 @@ export default function ShoppingScreen() {
           </View>
         }
       />
-      <Modal
-        visible={Boolean(actionItem)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActionTarget(undefined)}>
-        <View style={styles.modalOverlay}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Productacties sluiten"
-            style={StyleSheet.absoluteFill}
-            onPress={() => setActionTarget(undefined)}
-          />
-          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalEyebrow}>PRODUCT</Text>
-            <Text style={styles.modalTitle}>{actionItem?.name}</Text>
-            <View style={styles.actionOptions}>
-              <Pressable
-                onPress={() => {
-                  if (!actionItem) return;
-                  setActionTarget(undefined);
-                  setDepartmentItemId(actionItem.id);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Afdeling wijzigen van ${actionItem?.name ?? 'product'}`}
-                style={({ pressed }) => [styles.actionOption, pressed && styles.pressed]}>
-                <View style={styles.actionIcon}>
-                  <AppIcon
-                    name={{
-                      ios: 'square.grid.2x2',
-                      android: 'grid_view',
-                      web: 'grid_view',
-                    }}
-                    tintColor={palette.sageDark}
-                    size={19}
-                  />
-                </View>
-                <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>Afdeling wijzigen</Text>
-                  <Text style={styles.actionSubtitle}>{actionItem?.department}</Text>
-                </View>
-                <AppIcon
-                  name={{
-                    ios: 'chevron.right',
-                    android: 'chevron_right',
-                    web: 'chevron_right',
-                  }}
-                  tintColor={palette.textSoft}
-                  size={18}
-                />
-              </Pressable>
-              {actionItem && actionTarget?.canRemove ? (
-                <Pressable
-                  onPress={() => confirmRemove(actionItem)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${actionItem.name} van losse boodschappen verwijderen`}
-                  style={({ pressed }) => [styles.actionOption, pressed && styles.pressed]}>
-                  <View style={[styles.actionIcon, styles.dangerActionIcon]}>
-                    <AppIcon
-                      name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                      tintColor={palette.danger}
-                      size={19}
-                    />
-                  </View>
-                  <Text style={[styles.actionTitle, styles.dangerActionTitle]}>Verwijderen</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </SafeAreaView>
-        </View>
-      </Modal>
-      <Modal
-        visible={Boolean(departmentItem)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => !changingDepartment && setDepartmentItemId(undefined)}>
-        <View style={styles.modalOverlay}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Afdelingskiezer sluiten"
-            style={StyleSheet.absoluteFill}
-            onPress={() => !changingDepartment && setDepartmentItemId(undefined)}
-          />
-          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalEyebrow}>AFDELING WIJZIGEN</Text>
-            <Text style={styles.modalTitle}>{departmentItem?.name}</Text>
-            <Text style={styles.modalText}>Waar wil je dit product in de winkel terugvinden?</Text>
-            <ScrollView
-              style={styles.departmentScroll}
-              contentContainerStyle={styles.departmentOptions}
-              showsVerticalScrollIndicator={false}>
-              {departmentOrder.map((department) => {
-                const selected = departmentItem?.department === department;
-                return (
-                  <Pressable
-                    key={department}
-                    disabled={Boolean(changingDepartment)}
-                    onPress={async () => {
-                      if (!departmentItem) return;
-                      if (selected) {
-                        setDepartmentItemId(undefined);
-                        return;
-                      }
-                      setChangingDepartment(department);
-                      try {
-                        await updateShoppingItemDepartment(departmentItem.id, department);
-                        mealMateHaptics.selection();
-                        setDepartmentItemId(undefined);
-                      } catch {
-                        mealMateHaptics.error();
-                        Alert.alert(
-                          'Afdeling wijzigen mislukt',
-                          'Controleer je internetverbinding en probeer het opnieuw.',
-                        );
-                      } finally {
-                        setChangingDepartment(undefined);
-                      }
-                    }}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected, disabled: Boolean(changingDepartment) }}
-                    style={({ pressed }) => [
-                      styles.departmentOption,
-                      selected && styles.departmentOptionSelected,
-                      pressed && styles.pressed,
-                    ]}>
-                    <View style={[styles.departmentRadio, selected && styles.departmentRadioSelected]}>
-                      {selected ? <View style={styles.departmentRadioDot} /> : null}
-                    </View>
-                    <Text
-                      style={[
-                        styles.departmentOptionText,
-                        selected && styles.departmentOptionTextSelected,
-                      ]}>
-                      {department}
-                    </Text>
-                    {changingDepartment === department ? (
-                      <ActivityIndicator color={palette.sageDark} size="small" />
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </SafeAreaView>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -546,7 +373,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: radius.sm,
     flex: 1,
-    minHeight: 36,
     paddingVertical: spacing.sm,
   },
   groupButtonSelected: { backgroundColor: palette.surface },
@@ -635,110 +461,4 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 70 },
   emptyTitle: { color: palette.text, fontSize: 17, fontWeight: '700' },
   emptyText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
-  modalOverlay: {
-    backgroundColor: 'rgba(24, 28, 23, 0.38)',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: palette.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    maxHeight: '88%',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    backgroundColor: palette.border,
-    borderRadius: radius.pill,
-    height: 4,
-    marginBottom: spacing.lg,
-    width: 44,
-  },
-  modalEyebrow: {
-    color: palette.sage,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  modalTitle: {
-    color: palette.text,
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: spacing.sm,
-  },
-  modalText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
-  actionOptions: {
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  actionOption: {
-    alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 60,
-    paddingHorizontal: spacing.lg,
-  },
-  actionIcon: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.sm,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  actionCopy: { flex: 1, marginLeft: spacing.md },
-  actionTitle: {
-    color: palette.text,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  actionSubtitle: { color: palette.textMuted, fontSize: 12, marginTop: 2 },
-  dangerActionIcon: { backgroundColor: '#F4E5E3' },
-  dangerActionTitle: { color: palette.danger, marginLeft: spacing.md },
-  departmentScroll: { marginTop: spacing.lg },
-  departmentOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
-  departmentOption: {
-    alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-  },
-  departmentOptionSelected: {
-    backgroundColor: palette.sageSoft,
-    borderColor: palette.sage,
-  },
-  departmentRadio: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    height: 22,
-    justifyContent: 'center',
-    width: 22,
-  },
-  departmentRadioSelected: { borderColor: palette.sageDark },
-  departmentRadioDot: {
-    backgroundColor: palette.sageDark,
-    borderRadius: radius.pill,
-    height: 10,
-    width: 10,
-  },
-  departmentOptionText: {
-    color: palette.text,
-    flex: 1,
-    fontSize: 14,
-    marginLeft: spacing.md,
-  },
-  departmentOptionTextSelected: { color: palette.sageDark, fontWeight: '700' },
 });

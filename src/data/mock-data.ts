@@ -77,6 +77,7 @@ export type FamilyMember = {
   email?: string;
   invitationStatus?: 'pending' | 'accepted';
   linkedUserId?: string;
+  avatarUrl?: string;
 };
 
 const ingredient = (

@@ -40,7 +40,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Tably gebruikt je foto's om gerechten en recepten toe te voegen.",
+          "photosPermission": "Tably gebruikt je foto's om een profielfoto, gerechten en recepten toe te voegen.",
           "cameraPermission": "Tably gebruikt de camera om gerechten en recepten te fotograferen.",
           "microphonePermission": false
         }
@@ -53,7 +53,35 @@
           "experimentalLauncherActivity": false
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-widgets",
+        {
+          "bundleIdentifier": "nl.mealmate.app.widgets",
+          "groupIdentifier": "group.nl.mealmate.app",
+          "widgets": [
+            {
+              "name": "HomeMealPlanWidget",
+              "displayName": "Tably weekmenu",
+              "description": "Bekijk wat er vandaag en morgen op het menu staat.",
+              "contentMarginsDisabled": true,
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium"
+              ]
+            },
+            {
+              "name": "LockScreenMealPlanWidget",
+              "displayName": "Tably op het menu",
+              "description": "Bekijk het eerstvolgende gerecht vanaf je toegangsscherm.",
+              "supportedFamilies": [
+                "accessoryRectangular"
+              ]
+            }
+          ]
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -67,7 +95,7 @@
     },
     "owner": "jasperhuting",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/14052397-d4de-417e-9c10-38b68678f3ba"

@@ -17,12 +17,15 @@ import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { dateToIso, type Recipe } from '@/data/mock-data';
+import { recipeMatchesFilters } from '@/lib/recipe-filters';
 import { useMealMate } from '@/state/meal-mate-provider';
+import { useRecipeFilters } from '@/state/recipe-filter-provider';
 
 export default function RecipesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { recipes, ratings, familyMembers, weekDays, mealAttendance } = useMealMate();
+  const { filters, activeFilterCount, setFilters, clearFilters } = useRecipeFilters();
   const [query, setQuery] = useState('');
   const [selectedDayIso, setSelectedDayIso] = useState(() => {
     const todayIso = dateToIso(new Date());
@@ -53,11 +56,16 @@ export default function RecipesScreen() {
 
   const filteredRecipes = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('nl');
-    const matches = normalized
-      ? recipes.filter((recipe) =>
-          `${recipe.title} ${recipe.subtitle}`.toLocaleLowerCase('nl').includes(normalized),
-        )
-      : [...recipes];
+    const matches = recipes.filter((recipe) => {
+      const matchesQuery = !normalized
+        || `${recipe.title} ${recipe.subtitle}`.toLocaleLowerCase('nl').includes(normalized);
+      return matchesQuery && recipeMatchesFilters(
+        recipe,
+        filters,
+        ratings,
+        eatingMembers.map((member) => member.id),
+      );
+    });
     return matches.sort((a, b) => {
       const aScore = recipeScore(a);
       const bScore = recipeScore(b);
@@ -66,7 +74,46 @@ export default function RecipesScreen() {
       if (bScore === null) return -1;
       return sortDirection === 'high' ? bScore - aScore : aScore - bScore;
     });
-  }, [query, recipeScore, recipes, sortDirection]);
+  }, [eatingMembers, filters, query, ratings, recipeScore, recipes, sortDirection]);
+
+  const activeFilterLabels = useMemo(() => {
+    const labels: { key: string; label: string }[] = [];
+    if (filters.ingredientNames.length > 0) {
+      labels.push({
+        key: 'ingredients',
+        label: filters.ingredientNames.length === 1
+          ? filters.ingredientNames[0]
+          : `${filters.ingredientNames.length} ingrediënten`,
+      });
+    }
+    if (filters.minimumHouseholdRating !== null) {
+      labels.push({ key: 'household', label: `Samen ★ ${filters.minimumHouseholdRating}+` });
+    }
+    if (filters.memberId && filters.minimumMemberRating !== null) {
+      const member = familyMembers.find((candidate) => candidate.id === filters.memberId);
+      labels.push({
+        key: 'member',
+        label: `${member?.name ?? 'Persoon'} ★ ${filters.minimumMemberRating}+`,
+      });
+    }
+    if (filters.maximumMinutes !== null) {
+      labels.push({ key: 'minutes', label: `Tot ${filters.maximumMinutes} min` });
+    }
+    if (filters.quickAndEasy) labels.push({ key: 'easy', label: 'Snel & makkelijk' });
+    if (filters.neverRated) labels.push({ key: 'unrated', label: 'Nog nooit beoordeeld' });
+    return labels;
+  }, [familyMembers, filters]);
+
+  const removeFilter = (key: string) => {
+    if (key === 'ingredients') setFilters({ ...filters, ingredientNames: [] });
+    if (key === 'household') setFilters({ ...filters, minimumHouseholdRating: null });
+    if (key === 'member') {
+      setFilters({ ...filters, memberId: null, minimumMemberRating: null });
+    }
+    if (key === 'minutes') setFilters({ ...filters, maximumMinutes: null });
+    if (key === 'easy') setFilters({ ...filters, quickAndEasy: false });
+    if (key === 'unrated') setFilters({ ...filters, neverRated: false });
+  };
 
   const openRating = (recipe: Recipe) => {
     if (familyMembers.length === 0) {
@@ -78,7 +125,10 @@ export default function RecipesScreen() {
   };
 
   const editRecipe = (recipe: Recipe) => {
-    router.push({ pathname: '/add-recipe', params: { recipeId: recipe.id } });
+    router.push({
+      pathname: '/add-recipe',
+      params: { recipeId: recipe.id, allowDelete: 'true' },
+    });
   };
 
   return (
@@ -112,21 +162,83 @@ export default function RecipesScreen() {
               }
             />
 
-            <View style={styles.searchBox}>
-              <AppIcon
-                name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
-                tintColor={palette.textSoft}
-              />
-              <TextInput
-                defaultValue=""
-                onChangeText={setQuery}
-                placeholder="Zoek een gerecht..."
-                placeholderTextColor={palette.textSoft}
-                returnKeyType="search"
-                style={styles.searchInput}
-                accessibilityLabel="Recepten zoeken"
-              />
+            <View style={styles.searchRow}>
+              <View style={styles.searchBox}>
+                <AppIcon
+                  name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
+                  tintColor={palette.textSoft}
+                />
+                <TextInput
+                  defaultValue=""
+                  onChangeText={setQuery}
+                  placeholder="Zoek een gerecht..."
+                  placeholderTextColor={palette.textSoft}
+                  returnKeyType="search"
+                  style={styles.searchInput}
+                  accessibilityLabel="Recepten zoeken"
+                />
+              </View>
+              <Pressable
+                onPress={() => router.push({
+                  pathname: '/recipe-filters',
+                  params: { day: selectedDay?.isoDate ?? '' },
+                })}
+                accessibilityRole="button"
+                accessibilityLabel={activeFilterCount > 0
+                  ? `Filters openen, ${activeFilterCount} actief`
+                  : 'Filters openen'}
+                style={({ pressed }) => [
+                  styles.filterButton,
+                  activeFilterCount > 0 && styles.filterButtonActive,
+                  pressed && styles.pressed,
+                ]}>
+                <AppIcon
+                  name={{ ios: 'line.3.horizontal.decrease', android: 'filter_alt', web: 'filter_alt' }}
+                  tintColor={activeFilterCount > 0 ? palette.white : palette.sageDark}
+                  size={20}
+                />
+                {activeFilterCount > 0 ? (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
             </View>
+
+            {activeFilterLabels.length > 0 ? (
+              <View style={styles.activeFiltersBlock}>
+                <View style={styles.activeFiltersHeading}>
+                  <Text style={styles.activeFiltersTitle}>Actieve filters</Text>
+                  <Pressable
+                    onPress={clearFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel="Alle filters wissen"
+                    hitSlop={6}>
+                    <Text style={styles.clearFiltersText}>Wis alles</Text>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.activeFilterList}>
+                  {activeFilterLabels.map((filter) => (
+                    <Pressable
+                      key={filter.key}
+                      onPress={() => removeFilter(filter.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filter ${filter.label} verwijderen`}
+                      style={({ pressed }) => [styles.activeFilterChip, pressed && styles.pressed]}>
+                      <Text style={styles.activeFilterChipText}>{filter.label}</Text>
+                      <AppIcon
+                        name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                        tintColor={palette.sageDark}
+                        size={13}
+                      />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
 
             {familyMembers.length === 0 ? (
               <Pressable
@@ -221,7 +333,7 @@ export default function RecipesScreen() {
             ) : null}
 
             <View style={styles.listHeading}>
-              <Text style={styles.listTitle}>Alle gerechten</Text>
+              <Text style={styles.listTitle}>{activeFilterCount > 0 ? 'Resultaten' : 'Alle gerechten'}</Text>
               <Text style={styles.listCount}>{filteredRecipes.length}</Text>
             </View>
           </View>
@@ -229,11 +341,11 @@ export default function RecipesScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>
-              {query.trim() ? 'Geen gerecht gevonden' : 'Nog geen gerechten'}
+              {query.trim() || activeFilterCount > 0 ? 'Geen gerecht gevonden' : 'Nog geen gerechten'}
             </Text>
             <Text style={styles.emptyText}>
-              {query.trim()
-                ? 'Probeer een kortere zoekterm.'
+              {query.trim() || activeFilterCount > 0
+                ? 'Pas je zoekopdracht of filters aan.'
                 : 'Voeg jullie eerste gerecht toe met de plusknop.'}
             </Text>
           </View>
@@ -312,17 +424,58 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 46,
   },
+  searchRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
   searchBox: {
     alignItems: 'center',
     backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radius.lg,
     borderWidth: 1,
+    flex: 1,
     flexDirection: 'row',
-    marginTop: spacing.xl,
     paddingHorizontal: spacing.lg,
   },
   searchInput: { color: palette.text, flex: 1, fontSize: 16, height: 52, marginLeft: spacing.md },
+  filterButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    height: 52,
+    justifyContent: 'center',
+    width: 52,
+  },
+  filterButtonActive: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
+  filterBadge: {
+    alignItems: 'center',
+    backgroundColor: palette.white,
+    borderRadius: radius.pill,
+    height: 18,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 4,
+    top: 4,
+    width: 18,
+  },
+  filterBadgeText: { color: palette.sageDark, fontSize: 10, fontWeight: '800' },
+  activeFiltersBlock: { marginTop: spacing.md },
+  activeFiltersHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  activeFiltersTitle: { color: palette.textMuted, fontSize: 11, fontWeight: '700' },
+  clearFiltersText: { color: palette.sageDark, fontSize: 11, fontWeight: '700' },
+  activeFilterList: { gap: spacing.sm, paddingTop: spacing.sm },
+  activeFilterChip: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 11,
+  },
+  activeFilterChipText: { color: palette.sageDark, fontSize: 11, fontWeight: '700' },
   familyBanner: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,

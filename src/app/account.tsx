@@ -1,3 +1,7 @@
+import * as Application from 'expo-application';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
+import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { getUserInitial } from '@/lib/user-initial';
@@ -21,10 +26,56 @@ import { useAuth } from '@/state/auth-provider';
 import { useHapticsSettings } from '@/state/haptics-provider';
 
 export default function AccountScreen() {
-  const { session, signOut, deleteAccount } = useAuth();
+  const { session, avatarUrl, signOut, uploadAvatar, deleteAccount } = useAuth();
   const { hapticsEnabled, setHapticsEnabled } = useHapticsSettings();
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInitial = getUserInitial(session?.user);
+  const appVersion = Constants.expoConfig?.version ?? Application.nativeApplicationVersion ?? '—';
+  const buildInfo =
+    Platform.OS === 'web'
+      ? `Versie ${appVersion} · web`
+      : Constants.executionEnvironment === ExecutionEnvironment.StoreClient
+        ? `Versie ${appVersion} · Expo Go`
+        : `Versie ${appVersion} · build ${Application.nativeBuildVersion ?? 'development'}`;
+
+  const chooseAvatar = async () => {
+    if (isUploadingAvatar) return;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+      if (result.canceled) return;
+
+      setIsUploadingAvatar(true);
+      const asset = result.assets[0];
+      const squareSize = Math.min(asset.width, asset.height);
+      const context = ImageManipulator.manipulate(asset.uri);
+      context.crop({
+        originX: Math.round((asset.width - squareSize) / 2),
+        originY: Math.round((asset.height - squareSize) / 2),
+        width: squareSize,
+        height: squareSize,
+      });
+      context.resize({ width: 512, height: 512 });
+      const rendered = await context.renderAsync();
+      const prepared = await rendered.saveAsync({ compress: 0.82, format: SaveFormat.JPEG });
+      await uploadAvatar(prepared.uri);
+      mealMateHaptics.success();
+    } catch (error) {
+      if (__DEV__) console.warn('Tably profielfoto uploaden mislukt', error);
+      mealMateHaptics.error();
+      Alert.alert(
+        'Profielfoto uploaden mislukt',
+        'De foto kon niet worden opgeslagen. Probeer het opnieuw. Blijft dit gebeuren, log dan opnieuw in.',
+      );
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
 
   const removeAccount = async () => {
     setIsDeletingAccount(true);
@@ -88,9 +139,25 @@ export default function AccountScreen() {
         </Text>
 
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{avatarInitial}</Text>
-          </View>
+          <Pressable
+            onPress={() => void chooseAvatar()}
+            disabled={isUploadingAvatar}
+            accessibilityRole="button"
+            accessibilityLabel={avatarUrl ? 'Wijzig je profielfoto' : 'Upload een profielfoto'}
+            style={({ pressed }) => [styles.avatarButton, pressed && styles.pressed]}>
+            <UserAvatar initial={avatarInitial} size={52} uri={avatarUrl} />
+            <View style={styles.avatarBadge}>
+              {isUploadingAvatar ? (
+                <ActivityIndicator color={palette.white} size="small" />
+              ) : (
+                <AppIcon
+                  name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                  tintColor={palette.white}
+                  size={12}
+                />
+              )}
+            </View>
+          </Pressable>
           <View style={styles.profileCopy}>
             <Text style={styles.profileLabel}>INGELOGD ALS</Text>
             <Text style={styles.email} numberOfLines={1}>
@@ -187,6 +254,10 @@ export default function AccountScreen() {
             size={17}
           />
         </Pressable>
+
+        <Text accessibilityLabel={buildInfo} style={styles.buildInfo}>
+          {buildInfo}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -223,15 +294,20 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     padding: spacing.lg,
   },
-  avatar: {
+  avatarButton: { height: 56, width: 56 },
+  avatarBadge: {
     alignItems: 'center',
-    backgroundColor: palette.surfaceStrong,
+    backgroundColor: palette.sageDark,
+    borderColor: palette.surface,
     borderRadius: radius.pill,
-    height: 48,
+    borderWidth: 2,
+    bottom: 0,
+    height: 23,
     justifyContent: 'center',
-    width: 48,
+    position: 'absolute',
+    right: 0,
+    width: 23,
   },
-  avatarText: { color: palette.sageDark, fontSize: 14, fontWeight: '800' },
   profileCopy: { flex: 1, marginLeft: spacing.md },
   profileLabel: { color: palette.textSoft, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   email: { color: palette.text, fontSize: 14, fontWeight: '700', marginTop: 4 },
@@ -275,5 +351,12 @@ const styles = StyleSheet.create({
   dangerCard: { borderColor: '#E5C9C6', borderWidth: 1 },
   dangerIcon: { backgroundColor: '#F4E5E3' },
   dangerTitle: { color: palette.danger, fontSize: 15, fontWeight: '700' },
+  buildInfo: {
+    color: palette.textSoft,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: spacing.xl,
+    textAlign: 'center',
+  },
   pressed: { opacity: 0.68 },
 });

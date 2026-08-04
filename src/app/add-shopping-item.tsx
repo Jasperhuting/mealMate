@@ -5,7 +5,6 @@ import {
   Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -19,19 +18,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
-import { defaultDepartment, jumboDepartments, type Department } from '@/data/mock-data';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useMealMate } from '@/state/meal-mate-provider';
+import { useShoppingItemDraft } from '@/state/shopping-item-draft-provider';
 
 export default function AddShoppingItemScreen() {
   const router = useRouter();
   const { addShoppingItem } = useMealMate();
+  const { department, resetDepartment } = useShoppingItemDraft();
   const nameInput = useRef<TextInput>(null);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('1');
   const [unit, setUnit] = useState('stuk');
-  const [department, setDepartment] = useState<Department>(defaultDepartment);
-  const [departmentPickerOpen, setDepartmentPickerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
@@ -48,6 +46,8 @@ export default function AddShoppingItemScreen() {
       hideSubscription.remove();
     };
   }, []);
+
+  useEffect(() => () => resetDepartment(), [resetDepartment]);
 
   const close = () => {
     if (router.canGoBack()) {
@@ -153,7 +153,7 @@ export default function AddShoppingItemScreen() {
               <Pressable
                 onPress={() => {
                   Keyboard.dismiss();
-                  setDepartmentPickerOpen(true);
+                  router.push('/select-shopping-department');
                 }}
                 accessibilityRole="button"
                 accessibilityLabel="Afdeling kiezen"
@@ -192,65 +192,6 @@ export default function AddShoppingItemScreen() {
           </View>
         ) : null}
       </SafeAreaView>
-      <Modal
-        visible={departmentPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDepartmentPickerOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Afdelingskiezer sluiten"
-            style={StyleSheet.absoluteFill}
-            onPress={() => setDepartmentPickerOpen(false)}
-          />
-          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalEyebrow}>AFDELING KIEZEN</Text>
-            <Text style={styles.modalTitle}>Waar vind je dit product?</Text>
-            <Text style={styles.modalText}>Kies de plek waar je het in de winkel verwacht.</Text>
-            <ScrollView
-              style={styles.departmentScroll}
-              contentContainerStyle={styles.departmentOptions}
-              showsVerticalScrollIndicator={false}>
-              {jumboDepartments.map((option) => {
-                const selected = option === department;
-                return (
-                  <Pressable
-                    key={option}
-                    onPress={() => {
-                      setDepartment(option);
-                      setDepartmentPickerOpen(false);
-                      if (!selected) mealMateHaptics.selection();
-                    }}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    style={({ pressed }) => [
-                      styles.departmentOption,
-                      selected && styles.departmentOptionSelected,
-                      pressed && styles.pressed,
-                    ]}>
-                    <View
-                      style={[
-                        styles.departmentRadio,
-                        selected && styles.departmentRadioSelected,
-                      ]}>
-                      {selected ? <View style={styles.departmentRadioDot} /> : null}
-                    </View>
-                    <Text
-                      style={[
-                        styles.departmentOptionText,
-                        selected && styles.departmentOptionTextSelected,
-                      ]}>
-                      {option}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </SafeAreaView>
-        </View>
-      </Modal>
     </>
   );
 }
@@ -377,59 +318,4 @@ const styles = StyleSheet.create({
   },
   saveText: { color: palette.white, fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
-  modalOverlay: {
-    backgroundColor: 'rgba(24, 28, 23, 0.38)',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: palette.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    maxHeight: '88%',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    backgroundColor: palette.border,
-    borderRadius: radius.pill,
-    height: 4,
-    marginBottom: spacing.lg,
-    width: 44,
-  },
-  modalEyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  modalTitle: { color: palette.text, fontSize: 24, fontWeight: '700', marginTop: spacing.sm },
-  modalText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
-  departmentScroll: { marginTop: spacing.lg },
-  departmentOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
-  departmentOption: {
-    alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-  },
-  departmentOptionSelected: { backgroundColor: palette.sageSoft, borderColor: palette.sage },
-  departmentRadio: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.pill,
-    borderWidth: 1.5,
-    height: 22,
-    justifyContent: 'center',
-    width: 22,
-  },
-  departmentRadioSelected: { borderColor: palette.sageDark },
-  departmentRadioDot: {
-    backgroundColor: palette.sageDark,
-    borderRadius: radius.pill,
-    height: 11,
-    width: 11,
-  },
-  departmentOptionText: { color: palette.textMuted, flex: 1, fontSize: 14, marginLeft: spacing.md },
-  departmentOptionTextSelected: { color: palette.text, fontWeight: '700' },
 });

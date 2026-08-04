@@ -1,9 +1,10 @@
 import type { Department, FamilyMember, Recipe, WeekDay } from '@/data/mock-data';
 import { normalizeDepartment, weekDays as initialWeekDays } from '@/data/mock-data';
 import { ensureMealMateHousehold, ensureMealMateSession } from '@/lib/mealmate-session';
+import { getAvatarPublicUrl } from '@/lib/avatar-repository';
 import { supabase } from '@/lib/supabase';
 
-type PlannedMeals = Record<string, string | undefined>;
+export type PlannedMeals = Record<string, string | undefined>;
 export type LeftoverMeals = Record<string, string | undefined>;
 type Ratings = Record<string, Record<string, number | undefined>>;
 type ExcludedIngredients = Record<string, string[]>;
@@ -43,7 +44,27 @@ async function loadHouseholdPeople(householdId: string) {
     .eq('household_id', householdId)
     .order('created_at');
   if (error) throw error;
-  return data ?? [];
+  const people = data ?? [];
+  const linkedUserIds = people
+    .map((person) => person.linked_user_id)
+    .filter((id): id is string => Boolean(id));
+  if (linkedUserIds.length === 0) {
+    return people.map((person) => ({ ...person, avatar_url: null }));
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, avatar_url')
+    .in('id', linkedUserIds);
+  if (profilesError) throw profilesError;
+  const avatars = new Map(
+    (profiles ?? []).map((profile) => [profile.id, getAvatarPublicUrl(profile.avatar_url)]),
+  );
+
+  return people.map((person) => ({
+    ...person,
+    avatar_url: person.linked_user_id ? avatars.get(person.linked_user_id) ?? null : null,
+  }));
 }
 
 const queryPlans = async (householdId: string, days: WeekDay[] = initialWeekDays) => {
@@ -70,6 +91,18 @@ const queryPlans = async (householdId: string, days: WeekDay[] = initialWeekDays
   if (legacyError) throw legacyError;
   return (legacyData ?? []).map((plan) => ({ ...plan, leftover_from: null }));
 };
+
+export async function loadCloudPlannedMeals(
+  days: WeekDay[] = initialWeekDays,
+): Promise<PlannedMeals> {
+  if (!supabase || days.length === 0) return {};
+  const householdId = await ensureMealMateHousehold();
+  const plans = await queryPlans(householdId, days);
+
+  return Object.fromEntries(
+    plans.map((plan) => [plan.planned_for, plan.recipe_id]),
+  );
+}
 
 export async function saveCloudMealPlan(
   day: WeekDay,
@@ -415,6 +448,7 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
       email: person.email ?? undefined,
       invitationStatus: person.invitation_status,
       linkedUserId: person.linked_user_id ?? undefined,
+      avatarUrl: person.avatar_url ?? undefined,
     })),
     mealAttendance,
     completedShoppingIds: Array.from(checkedGroups.entries())
