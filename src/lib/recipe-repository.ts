@@ -1,6 +1,8 @@
 import { File } from 'expo-file-system';
 
 import { normalizeDepartment, recipes as exampleRecipes, type Recipe } from '@/data/mock-data';
+import { peasMakerRecipes } from '@/data/peas-maker-recipes';
+import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import { ensureMealMateHousehold, ensureMealMateSession } from '@/lib/mealmate-session';
 import { supabase } from '@/lib/supabase';
 
@@ -41,37 +43,46 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
 
   const { data, error } = await client
     .from('recipes')
-    .select('id, client_key, title, description, duration_minutes, image_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
+    .select('id, client_key, title, description, duration_minutes, image_url, source_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
     .order('created_at', { ascending: true });
   if (error) throw error;
 
   return Promise.all(
     (data ?? []).map(async (row) => {
-      const bundledRecipe = exampleRecipes.find((recipe) => recipe.id === row.client_key);
+      const bundledRecipe = [...exampleRecipes, ...peasMakerRecipes].find(
+        (recipe) => recipe.clientKey === row.client_key || recipe.id === row.client_key,
+      );
       let signedImageUrl: string | null = null;
       if (row.image_url) {
-        const { data: signed } = await client.storage
-          .from('recipe-images')
-          .createSignedUrl(row.image_url, 60 * 60 * 24 * 7);
-        signedImageUrl = signed?.signedUrl ?? null;
+        if (/^https?:\/\//i.test(row.image_url)) {
+          signedImageUrl = row.image_url;
+        } else {
+          const { data: signed } = await client.storage
+            .from('recipe-images')
+            .createSignedUrl(row.image_url, 60 * 60 * 24 * 7);
+          signedImageUrl = signed?.signedUrl ?? null;
+        }
       }
 
       return {
         id: row.id,
         clientKey: row.client_key || undefined,
         title: row.title,
-        subtitle: row.description || 'Opgeslagen in jullie MealMate-collectie',
+        subtitle: row.description || 'Opgeslagen in jullie Tably-collectie',
         minutes: row.duration_minutes || 30,
-        image: signedImageUrl ? { uri: signedImageUrl } : bundledRecipe?.image ?? null,
+        image: bundledRecipe?.image ?? (signedImageUrl ? { uri: signedImageUrl } : null),
+        sourceUrl: row.source_url || undefined,
         ingredients: [...(row.recipe_ingredients ?? [])]
           .sort((a, b) => a.sort_order - b.sort_order)
-          .map((item) => ({
-            id: item.id,
-            name: item.name,
-            amount: Number(item.quantity ?? 0),
-            unit: item.unit || '',
-            department: normalizeDepartment(item.department),
-          })),
+          .map((item) =>
+            normalizeIngredientQuantity({
+              id: item.id,
+              name: item.name,
+              amount: Number(item.quantity ?? 0),
+              unit: item.unit || '',
+              department: normalizeDepartment(item.department),
+            }),
+          ),
       };
     }),
   );
@@ -94,13 +105,15 @@ export async function createCloudRecipe(input: CloudRecipeInput): Promise<Recipe
       duration_minutes: input.minutes,
       servings: 2,
       client_key: input.clientKey || null,
+      source_url: input.sourceUrl || null,
     })
     .select('id')
     .single();
   if (recipeError || !recipe) throw recipeError ?? new Error('Het recept kon niet worden bewaard.');
 
+  const normalizedIngredients = input.ingredients.map(normalizeIngredientQuantity);
   const { error: ingredientError } = await supabase.from('recipe_ingredients').insert(
-    input.ingredients.map((item, index) => ({
+    normalizedIngredients.map((item, index) => ({
       recipe_id: recipe.id,
       name: item.name,
       quantity: item.amount,
@@ -265,7 +278,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
     );
     if (shoppingInsertError) throw shoppingInsertError;
   } catch (error) {
-    if (__DEV__) console.warn('MealMate planned shopping refresh failed', error);
+    if (__DEV__) console.warn('Tably planned shopping refresh failed', error);
   }
 }
 
@@ -276,6 +289,10 @@ export async function updateCloudRecipe(
 ): Promise<Recipe> {
   if (!supabase) throw new Error('Supabase is nog niet geconfigureerd.');
   const householdId = await ensureMealMateHousehold();
+  const normalizedInput = {
+    ...input,
+    ingredients: input.ingredients.map(normalizeIngredientQuantity),
+  };
 
   let previousImagePath: string | null = null;
   if (imageChanged) {
@@ -290,10 +307,10 @@ export async function updateCloudRecipe(
 
   const { error } = await supabase.rpc('update_recipe_details', {
     target_recipe_id: recipeId,
-    new_title: input.title,
-    new_description: input.subtitle,
-    new_duration_minutes: input.minutes,
-    new_ingredients: input.ingredients.map((item, index) => ({
+    new_title: normalizedInput.title,
+    new_description: normalizedInput.subtitle,
+    new_duration_minutes: normalizedInput.minutes,
+    new_ingredients: normalizedInput.ingredients.map((item, index) => ({
       name: item.name,
       quantity: item.amount,
       unit: item.unit,
@@ -303,14 +320,14 @@ export async function updateCloudRecipe(
   });
   if (error) {
     if (isMissingRecipeUpdateFunction(error)) {
-      await updateCloudRecipeWithoutRpc(recipeId, input);
+      await updateCloudRecipeWithoutRpc(recipeId, normalizedInput);
     } else {
       throw error;
     }
   }
 
   if (imageChanged) {
-    const localImageUri = imageUri(input.image);
+    const localImageUri = imageUri(normalizedInput.image);
     let nextImagePath: string | null = null;
     if (localImageUri) {
       const mimeType = imageType(localImageUri);
@@ -330,7 +347,11 @@ export async function updateCloudRecipe(
       .eq('id', recipeId);
     if (imageUpdateError) throw imageUpdateError;
 
-    if (previousImagePath && previousImagePath !== nextImagePath) {
+    if (
+      previousImagePath &&
+      previousImagePath !== nextImagePath &&
+      !/^https?:\/\//i.test(previousImagePath)
+    ) {
       await supabase.storage.from('recipe-images').remove([previousImagePath]);
     }
   }
@@ -338,6 +359,108 @@ export async function updateCloudRecipe(
   const updatedRecipe = (await loadCloudRecipes()).find((recipe) => recipe.id === recipeId);
   if (!updatedRecipe) throw new Error('Het aangepaste recept kon niet opnieuw worden geladen.');
   return updatedRecipe;
+}
+
+export async function deleteCloudRecipe(recipeId: string) {
+  if (!supabase) throw new Error('Supabase is nog niet geconfigureerd.');
+
+  const { data: deletedImagePath, error } = await supabase.rpc('delete_recipe', {
+    target_recipe_id: recipeId,
+  });
+  if (error) throw error;
+
+  if (deletedImagePath && !/^https?:\/\//i.test(deletedImagePath)) {
+    const { error: imageError } = await supabase.storage
+      .from('recipe-images')
+      .remove([deletedImagePath]);
+    if (imageError && __DEV__) {
+      console.warn('Tably deleted recipe image cleanup failed', imageError);
+    }
+  }
+}
+
+export async function ensurePeasMakerRecipes() {
+  if (!supabase) return;
+  const [userId, householdId] = await Promise.all([
+    ensureMealMateSession(),
+    ensureMealMateHousehold(),
+  ]);
+  const [{ data, error }, { data: deletedSeeds, error: deletedSeedsError }] = await Promise.all([
+    supabase
+      .from('recipes')
+      .select('client_key')
+      .eq('household_id', householdId)
+      .not('client_key', 'is', null),
+    supabase
+      .from('household_recipe_seed_deletions')
+      .select('client_key')
+      .eq('household_id', householdId),
+  ]);
+  if (error) throw error;
+  if (deletedSeedsError) throw deletedSeedsError;
+
+  const existingKeys = new Set([
+    ...(data ?? []).map((row) => row.client_key),
+    ...(deletedSeeds ?? []).map((row) => row.client_key),
+  ]);
+  const missingRecipes = peasMakerRecipes.filter(
+    (recipe) => recipe.clientKey && !existingKeys.has(recipe.clientKey),
+  );
+  if (missingRecipes.length === 0) return;
+
+  const { data: createdRecipes, error: recipeError } = await supabase
+    .from('recipes')
+    .insert(
+      missingRecipes.map((recipe) => ({
+        household_id: householdId,
+        created_by: userId,
+        title: recipe.title,
+        description: recipe.subtitle,
+        duration_minutes: recipe.minutes,
+        servings: 2,
+        image_url: imageUri(recipe.image),
+        source_url: recipe.sourceUrl || null,
+        client_key: recipe.clientKey,
+      })),
+    )
+    .select('id, client_key');
+  if (recipeError || !createdRecipes) {
+    throw recipeError ?? new Error('De Peas Maker-recepten konden niet worden toegevoegd.');
+  }
+
+  const recipeIdByClientKey = new Map(
+    createdRecipes.map((recipe) => [recipe.client_key, recipe.id]),
+  );
+  const ingredients = missingRecipes.flatMap((recipe) => {
+    const recipeId = recipeIdByClientKey.get(recipe.clientKey);
+    if (!recipeId) return [];
+    return recipe.ingredients.map((ingredient, index) => ({
+      recipe_id: recipeId,
+      name: ingredient.name,
+      quantity: ingredient.amount,
+      unit: ingredient.unit,
+      department: ingredient.department,
+      sort_order: index,
+    }));
+  });
+
+  try {
+    for (let index = 0; index < ingredients.length; index += 300) {
+      const { error: ingredientError } = await supabase
+        .from('recipe_ingredients')
+        .insert(ingredients.slice(index, index + 300));
+      if (ingredientError) throw ingredientError;
+    }
+  } catch (ingredientError) {
+    await supabase
+      .from('recipes')
+      .delete()
+      .in(
+        'id',
+        createdRecipes.map((recipe) => recipe.id),
+      );
+    throw ingredientError;
+  }
 }
 
 export async function ensureExampleRecipes() {

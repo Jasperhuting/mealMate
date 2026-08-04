@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { BrandLogo } from '@/components/mealmate/brand-logo';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { useAuth } from '@/state/auth-provider';
 
@@ -24,7 +25,7 @@ const friendlyAuthError = (provider: Provider, error: unknown) => {
   const message = error instanceof Error ? error.message : '';
   if ((error as { code?: string })?.code === 'ERR_REQUEST_CANCELED') return null;
   if (/provider.*not enabled|unsupported provider/i.test(message)) {
-    return `${provider === 'apple' ? 'Apple' : 'Google'} is nog niet geactiveerd voor MealMate.`;
+    return `${provider === 'apple' ? 'Apple' : 'Google'} is nog niet geactiveerd voor Tably.`;
   }
   return message || 'Inloggen is niet gelukt. Probeer het opnieuw.';
 };
@@ -104,23 +105,16 @@ export function LoginScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <View style={styles.brandRow}>
-            <View style={styles.logo}>
-              <AppIcon
-                name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }}
-                tintColor={palette.sageDark}
-                size={30}
-                fallback="M"
-              />
-            </View>
-            <Text style={styles.brand}>MealMate</Text>
+          <View style={styles.brandBlock}>
+            <BrandLogo width={132} />
+            <Text style={styles.tagline}>Save it. Plan it. Shop for it.</Text>
           </View>
 
           <View style={styles.hero}>
             <Text style={styles.eyebrow}>SAMEN ETEN, SLIM GEPLAND</Text>
             <Text style={styles.title}>Alles voor jullie weekmenu op één plek.</Text>
             <Text style={styles.subtitle}>
-              Bewaar recepten, plan gerechten en laat MealMate automatisch jullie boodschappenlijst maken.
+              Bewaar recepten, plan gerechten en laat Tably automatisch jullie boodschappenlijst maken.
             </Text>
           </View>
 
@@ -139,7 +133,7 @@ export function LoginScreen() {
           </View>
 
           <View style={styles.authCard}>
-            <Text style={styles.authTitle}>Begin met MealMate</Text>
+            <Text style={styles.authTitle}>Begin met Tably</Text>
             <Text style={styles.authText}>Log in met e-mail om de app direct te kunnen testen.</Text>
 
             <View style={styles.modeSwitch}>
@@ -256,7 +250,7 @@ export function LoginScreen() {
           </View>
 
           <Text style={styles.legal}>
-            Door verder te gaan ga je akkoord met de voorwaarden en het privacybeleid van MealMate.
+            Door verder te gaan ga je akkoord met de voorwaarden en het privacybeleid van Tably.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -267,14 +261,7 @@ export function LoginScreen() {
 export function AuthLoadingScreen() {
   return (
     <SafeAreaView style={styles.loadingScreen}>
-      <View style={styles.logo}>
-        <AppIcon
-          name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }}
-          tintColor={palette.sageDark}
-          size={30}
-          fallback="M"
-        />
-      </View>
+      <BrandLogo width={168} />
       <ActivityIndicator color={palette.sageDark} style={styles.loadingIndicator} />
     </SafeAreaView>
   );
@@ -284,9 +271,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   keyboardAvoider: { flex: 1 },
   content: { flexGrow: 1, padding: spacing.xl, paddingBottom: spacing.xxl },
-  brandRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
-  logo: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.md, height: 52, justifyContent: 'center', width: 52 },
-  brand: { color: palette.sageDark, fontSize: 22, fontWeight: '800', letterSpacing: -0.6 },
+  brandBlock: { alignItems: 'flex-start' },
+  tagline: { color: palette.textMuted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   hero: { marginTop: 58 },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   title: { color: palette.text, fontSize: 37, fontWeight: '700', letterSpacing: -1.2, lineHeight: 43, marginTop: spacing.md },

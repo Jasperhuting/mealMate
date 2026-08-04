@@ -7,7 +7,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -18,67 +17,53 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
-import {
-  createHouseholdInvite,
-  joinHousehold,
-  type HouseholdInvite,
-} from '@/lib/family-sharing';
+import { inviteFamilyMember } from '@/lib/family-sharing';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function FamilySharingScreen() {
   const router = useRouter();
-  const { reloadHousehold } = useMealMate();
-  const [invite, setInvite] = useState<HouseholdInvite | null>(null);
-  const [joinCode, setJoinCode] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
+  const { familyMembers, reloadHousehold } = useMealMate();
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
 
-  const createInvite = async () => {
-    setIsCreating(true);
-    try {
-      setInvite(await createHouseholdInvite());
-    } catch {
-      Alert.alert('Uitnodiging mislukt', 'Probeer het over een moment opnieuw.');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const shareInvite = async () => {
-    if (!invite) return;
-    await Share.share({
-      message: `Word lid van mijn gezin in MealMate. Open Gezin > Iemand uitnodigen en vul deze code in: ${invite.code}`,
-    });
-  };
-
-  const join = async () => {
-    const cleanCode = joinCode.trim();
-    if (cleanCode.replace(/[^a-zA-Z0-9]/g, '').length !== 8) {
-      Alert.alert('Controleer de code', 'Een uitnodigingscode bestaat uit acht tekens.');
+  const sendInvite = async () => {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanName) {
+      Alert.alert('Naam ontbreekt', 'Vul alvast in hoe deze persoon in jullie gezin heet.');
       return;
     }
-    setIsJoining(true);
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      Alert.alert('Controleer het e-mailadres', 'Vul een geldig e-mailadres in.');
+      return;
+    }
+
+    setIsInviting(true);
     try {
-      await joinHousehold(cleanCode);
+      await inviteFamilyMember(cleanName, cleanEmail);
       await reloadHousehold();
+      mealMateHaptics.success();
       Alert.alert(
-        'Welkom in het gezin',
-        'Het gedeelde weekmenu, de recepten en boodschappen staan nu op dit toestel.',
-        [{ text: 'Bekijk gezin', onPress: () => router.back() }],
+        `${cleanName} is toegevoegd`,
+        `De uitnodiging is verstuurd naar ${cleanEmail}. Tot de bevestiging staat het lid als in afwachting vermeld.`,
+        [{ text: 'Klaar', onPress: () => router.back() }],
       );
     } catch (error) {
+      mealMateHaptics.error();
       Alert.alert(
-        'Deelnemen mislukt',
-        error instanceof Error ? error.message : 'Probeer het nog een keer.',
+        'Uitnodigen mislukt',
+        error instanceof Error ? error.message : 'Probeer het over een moment opnieuw.',
       );
     } finally {
-      setIsJoining(false);
+      setIsInviting(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ModalScreenHeader title="Gezin delen" closeLabel="Sluit gezin delen" />
+      <ModalScreenHeader title="Gezin instellen" closeLabel="Sluit gezin instellen" />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -87,10 +72,11 @@ export default function FamilySharingScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <Text style={styles.eyebrow}>SAMEN IN MEALMATE</Text>
-          <Text style={styles.title}>Deel jullie gezin</Text>
+          <Text style={styles.eyebrow}>SAMEN IN TABLY</Text>
+          <Text style={styles.title}>Nodig iemand uit</Text>
           <Text style={styles.subtitle}>
-            Met één code gebruiken jullie hetzelfde weekmenu, dezelfde recepten en dezelfde boodschappenlijst.
+            Vul zelf alvast een naam in. Deze persoon verschijnt direct in jullie gezin en krijgt
+            een e-mail om de uitnodiging te bevestigen en zo nodig een account te maken.
           </Text>
 
           <View style={styles.card}>
@@ -101,85 +87,85 @@ export default function FamilySharingScreen() {
                 fallback="+"
               />
             </View>
-            <Text style={styles.cardTitle}>Nodig iemand uit</Text>
-            <Text style={styles.cardText}>
-              Maak een eenmalige code. De code blijft zeven dagen geldig.
-            </Text>
-
-            {invite ? (
-              <>
-                <View style={styles.codeCard}>
-                  <Text style={styles.codeLabel}>JULLIE CODE</Text>
-                  <Text selectable style={styles.code}>{invite.code}</Text>
-                </View>
-                <Pressable
-                  onPress={() => void shareInvite()}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-                  <AppIcon
-                    name={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
-                    tintColor={palette.white}
-                    size={19}
-                  />
-                  <Text style={styles.primaryText}>Deel de code</Text>
-                </Pressable>
-              </>
-            ) : (
-              <Pressable
-                onPress={() => void createInvite()}
-                disabled={isCreating}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.primaryButton, (pressed || isCreating) && styles.pressed]}>
-                {isCreating ? (
-                  <ActivityIndicator color={palette.white} />
-                ) : (
-                  <Text style={styles.primaryText}>Maak uitnodigingscode</Text>
-                )}
-              </Pressable>
-            )}
-          </View>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OF</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardIcon}>
-              <AppIcon
-                name={{ ios: 'person.2', android: 'groups', web: 'groups' }}
-                tintColor={palette.sageDark}
-              />
-            </View>
-            <Text style={styles.cardTitle}>Word lid van een gezin</Text>
-            <Text style={styles.cardText}>Vul de code in die je van je partner hebt gekregen.</Text>
+            <Text style={styles.label}>NAAM IN JULLIE GEZIN</Text>
             <TextInput
-              value={joinCode}
-              onChangeText={(value) => setJoinCode(value.toUpperCase())}
-              placeholder="ABCD-EF12"
+              value={name}
+              onChangeText={setName}
+              placeholder="Bijvoorbeeld Lisanne"
               placeholderTextColor={palette.textSoft}
-              autoCapitalize="characters"
+              autoCapitalize="words"
+              autoComplete="name"
+              returnKeyType="next"
+              style={styles.input}
+              accessibilityLabel="Naam van het gezinslid"
+            />
+            <Text style={styles.label}>E-MAILADRES</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="naam@voorbeeld.nl"
+              placeholderTextColor={palette.textSoft}
+              autoCapitalize="none"
               autoCorrect={false}
-              maxLength={9}
-              style={styles.codeInput}
-              accessibilityLabel="Uitnodigingscode"
+              autoComplete="email"
+              keyboardType="email-address"
+              returnKeyType="send"
+              onSubmitEditing={() => void sendInvite()}
+              style={styles.input}
+              accessibilityLabel="E-mailadres van het gezinslid"
             />
             <Pressable
-              onPress={() => void join()}
-              disabled={isJoining}
+              onPress={() => void sendInvite()}
+              disabled={isInviting}
               accessibilityRole="button"
-              style={({ pressed }) => [styles.secondaryButton, (pressed || isJoining) && styles.pressed]}>
-              {isJoining ? (
-                <ActivityIndicator color={palette.sageDark} />
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (pressed || isInviting) && styles.pressed,
+              ]}>
+              {isInviting ? (
+                <ActivityIndicator color={palette.white} />
               ) : (
-                <Text style={styles.secondaryText}>Word lid van dit gezin</Text>
+                <>
+                  <AppIcon
+                    name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }}
+                    tintColor={palette.white}
+                    size={18}
+                  />
+                  <Text style={styles.primaryText}>Voeg toe en verstuur uitnodiging</Text>
+                </>
               )}
             </Pressable>
           </View>
 
+          {familyMembers.length > 0 ? (
+            <View style={styles.membersCard}>
+              <Text style={styles.membersTitle}>Jullie gezin</Text>
+              {familyMembers.map((member) => (
+                <View key={member.id} style={styles.memberRow}>
+                  <View style={[styles.avatar, { backgroundColor: member.color }]}>
+                    <Text style={styles.avatarText}>{member.initials}</Text>
+                  </View>
+                  <View style={styles.memberCopy}>
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    <Text style={styles.memberEmail}>{member.email ?? 'Tably-lid'}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.statusPill,
+                      member.invitationStatus === 'pending' && styles.statusPillPending,
+                    ]}>
+                    <Text style={styles.statusText}>
+                      {member.invitationStatus === 'pending' ? 'Wacht op bevestiging' : 'Lid'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <Text style={styles.privacyText}>
-            Alleen mensen met een geldige code kunnen één keer deelnemen. Je eerdere MealMate-gegevens worden niet verwijderd.
+            De uitnodiging is zeven dagen geldig. Alleen de ontvanger van dit e-mailadres kan hem
+            bevestigen.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -193,7 +179,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.xl, paddingBottom: spacing.xxl },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
-  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
+  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 21, marginTop: 6 },
   card: {
     ...shadow.card,
     backgroundColor: palette.surface,
@@ -207,19 +193,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     height: 44,
     justifyContent: 'center',
+    marginBottom: spacing.sm,
     width: 44,
   },
-  cardTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginTop: spacing.md },
-  cardText: { color: palette.textMuted, fontSize: 14, lineHeight: 20, marginTop: spacing.sm },
-  codeCard: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
+  label: { color: palette.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.9, marginTop: spacing.md },
+  input: {
+    backgroundColor: palette.background,
+    borderColor: palette.border,
     borderRadius: radius.md,
-    marginTop: spacing.md,
-    padding: spacing.md,
+    borderWidth: 1,
+    color: palette.text,
+    fontSize: 16,
+    marginTop: spacing.sm,
+    minHeight: 54,
+    paddingHorizontal: spacing.lg,
   },
-  codeLabel: { color: palette.sage, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
-  code: { color: palette.text, fontSize: 28, fontWeight: '800', letterSpacing: 2, marginTop: spacing.sm },
   primaryButton: {
     alignItems: 'center',
     backgroundColor: palette.sageDark,
@@ -231,34 +219,18 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: spacing.lg,
   },
-  primaryText: { color: palette.white, fontSize: 15, fontWeight: '700' },
-  dividerRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginTop: spacing.xl },
-  divider: { backgroundColor: palette.border, flex: 1, height: 1 },
-  dividerText: { color: palette.textSoft, fontSize: 10, fontWeight: '800' },
-  codeInput: {
-    backgroundColor: palette.background,
-    borderColor: palette.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    color: palette.text,
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginTop: spacing.md,
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
-    textAlign: 'center',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    borderColor: palette.sage,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    justifyContent: 'center',
-    marginTop: spacing.md,
-    minHeight: 52,
-  },
-  secondaryText: { color: palette.sageDark, fontSize: 15, fontWeight: '700' },
+  primaryText: { color: palette.white, fontSize: 14, fontWeight: '700' },
+  membersCard: { backgroundColor: palette.surface, borderRadius: radius.lg, marginTop: spacing.xl, padding: spacing.lg },
+  membersTitle: { color: palette.text, fontSize: 17, fontWeight: '700', marginBottom: spacing.sm },
+  memberRow: { alignItems: 'center', borderTopColor: palette.border, borderTopWidth: 1, flexDirection: 'row', minHeight: 66 },
+  avatar: { alignItems: 'center', borderRadius: radius.pill, height: 38, justifyContent: 'center', width: 38 },
+  avatarText: { color: palette.white, fontSize: 10, fontWeight: '800' },
+  memberCopy: { flex: 1, marginLeft: spacing.md },
+  memberName: { color: palette.text, fontSize: 14, fontWeight: '700' },
+  memberEmail: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
+  statusPill: { backgroundColor: palette.sageSoft, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6 },
+  statusPillPending: { backgroundColor: palette.surfaceStrong },
+  statusText: { color: palette.sageDark, fontSize: 9, fontWeight: '800' },
   privacyText: { color: palette.textSoft, fontSize: 12, lineHeight: 18, marginTop: spacing.xl, textAlign: 'center' },
   pressed: { opacity: 0.7 },
 });

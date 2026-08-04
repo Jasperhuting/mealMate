@@ -23,6 +23,7 @@ import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
 import { parseIngredientLines } from '@/lib/ingredient-parser';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { persistRecipeImage } from '@/lib/recipe-image-storage';
 import {
   extractRecipeWithAi,
@@ -88,7 +89,7 @@ const prepareSelectedImage = async (asset: ImagePicker.ImagePickerAsset): Promis
 export default function AddRecipeScreen() {
   const { recipeId } = useLocalSearchParams<{ recipeId?: string }>();
   const router = useRouter();
-  const { addRecipe, updateRecipe, getRecipe } = useMealMate();
+  const { addRecipe, updateRecipe, removeRecipe, getRecipe } = useMealMate();
   const editingRecipe = getRecipe(typeof recipeId === 'string' ? recipeId : undefined);
   const isEditing = typeof recipeId === 'string';
   const initialImageUri = existingImageUri(editingRecipe?.image ?? null);
@@ -110,6 +111,7 @@ export default function AddRecipeScreen() {
   const [imageChanged, setImageChanged] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [wasFilledByAi, setWasFilledByAi] = useState(false);
   const [formVersion, setFormVersion] = useState(0);
 
@@ -133,7 +135,7 @@ export default function AddRecipeScreen() {
     if (ingredients.length === 0) {
       Alert.alert(
         'Ingrediënten ontbreken',
-        'Voeg minimaal één ingrediënt toe, zodat MealMate een boodschappenlijst kan maken.',
+        'Voeg minimaal één ingrediënt toe, zodat Tably een boodschappenlijst kan maken.',
       );
       return;
     }
@@ -153,21 +155,58 @@ export default function AddRecipeScreen() {
             : null
           : editingRecipe?.image ?? null,
         ingredients,
+        sourceUrl: editingRecipe?.sourceUrl,
       };
       if (editingRecipe) {
         await updateRecipe(editingRecipe.id, recipeInput, imageChanged);
       } else {
         await addRecipe(recipeInput);
       }
+      mealMateHaptics.success();
       router.back();
     } catch {
+      mealMateHaptics.error();
       Alert.alert(
         'Gerecht bewaren mislukt',
-        'MealMate kon het gerecht niet veilig opslaan. Controleer je internetverbinding en probeer het opnieuw.',
+        'Tably kon het gerecht niet veilig opslaan. Controleer je internetverbinding en probeer het opnieuw.',
       );
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const deleteRecipe = async () => {
+    if (!editingRecipe) return;
+    setIsDeleting(true);
+    try {
+      await removeRecipe(editingRecipe.id);
+      mealMateHaptics.destructive();
+      router.replace('/recipes');
+    } catch {
+      mealMateHaptics.error();
+      Alert.alert(
+        'Gerecht verwijderen mislukt',
+        'Het gerecht is niet verwijderd. Controleer je internetverbinding en probeer het opnieuw.',
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const confirmRecipeRemoval = () => {
+    if (!editingRecipe) return;
+    Alert.alert(
+      'Gerecht verwijderen?',
+      `${editingRecipe.title} wordt definitief verwijderd. Eventuele planningen en bijbehorende boodschappen verdwijnen ook.`,
+      [
+        { text: 'Annuleer', style: 'cancel' },
+        {
+          text: 'Verwijder',
+          style: 'destructive',
+          onPress: () => void deleteRecipe(),
+        },
+      ],
+    );
   };
 
   const selectImage = async (source: 'camera' | 'library') => {
@@ -175,13 +214,13 @@ export default function AddRecipeScreen() {
       if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          Alert.alert('Camera niet toegestaan', 'Geef MealMate toegang tot de camera om een foto te maken.');
+          Alert.alert('Camera niet toegestaan', 'Geef Tably toegang tot de camera om een foto te maken.');
           return;
         }
       } else {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permission.granted) {
-          Alert.alert('Foto’s niet toegestaan', 'Geef MealMate toegang tot je fotobibliotheek.');
+          Alert.alert('Foto’s niet toegestaan', 'Geef Tably toegang tot je fotobibliotheek.');
           return;
         }
       }
@@ -226,7 +265,7 @@ export default function AddRecipeScreen() {
     if (isProtectedSocialLink(sourceText) && !selectedImage?.base64) {
       Alert.alert(
         'Deze link schermt het recept af',
-        'Facebook, Instagram en TikTok laten MealMate de inhoud meestal niet lezen. Voeg een screenshot toe of plak de tekst van het bericht.',
+        'Facebook, Instagram en TikTok laten Tably de inhoud meestal niet lezen. Voeg een screenshot toe of plak de tekst van het bericht.',
       );
       return;
     }
@@ -239,7 +278,9 @@ export default function AddRecipeScreen() {
         imageMimeType: selectedImage?.mimeType,
       });
       applyAiDraft(draft);
+      mealMateHaptics.success();
     } catch (error) {
+      mealMateHaptics.error();
       Alert.alert(
         'AI kon het recept niet invullen',
         error instanceof Error ? error.message : 'Probeer het nog een keer.',
@@ -401,13 +442,37 @@ export default function AddRecipeScreen() {
         </ScrollView>
         {mode === 'manual' ? (
           <View style={styles.stickyFooter}>
+            {isEditing ? (
+              <Pressable
+                onPress={confirmRecipeRemoval}
+                disabled={isSaving || isDeleting}
+                accessibilityRole="button"
+                accessibilityLabel={`Verwijder ${editingRecipe?.title ?? 'dit gerecht'}`}
+                accessibilityState={{ disabled: isSaving || isDeleting }}
+                style={({ pressed }) => [
+                  styles.deleteButton,
+                  (isSaving || isDeleting) && styles.disabledButton,
+                  pressed && styles.pressed,
+                ]}>
+                {isDeleting ? (
+                  <ActivityIndicator color={palette.danger} size="small" />
+                ) : (
+                  <AppIcon
+                    name={{ ios: 'trash', android: 'delete_outline', web: 'delete_outline' }}
+                    tintColor={palette.danger}
+                    size={20}
+                  />
+                )}
+              </Pressable>
+            ) : null}
             <Pressable
               onPress={() => void saveRecipe()}
-              disabled={isSaving}
+              disabled={isSaving || isDeleting}
               accessibilityRole="button"
+              accessibilityState={{ disabled: isSaving || isDeleting }}
               style={({ pressed }) => [
                 styles.saveButton,
-                isSaving && styles.disabledButton,
+                (isSaving || isDeleting) && styles.disabledButton,
                 pressed && styles.pressed,
               ]}>
               {isSaving ? (
@@ -682,13 +747,26 @@ const styles = StyleSheet.create({
   department: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
   amount: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   stickyFooter: {
+    alignItems: 'center',
     backgroundColor: palette.background,
     borderTopColor: palette.border,
     borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
   },
-  saveButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, minHeight: 54, justifyContent: 'center', paddingVertical: 16 },
+  deleteButton: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.danger,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 54,
+    justifyContent: 'center',
+    width: 54,
+  },
+  saveButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, flex: 1, minHeight: 54, justifyContent: 'center', paddingVertical: 16 },
   saveButtonText: { color: palette.white, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.72 },
   notFound: { color: palette.text, fontSize: 16, padding: spacing.xl },

@@ -1,0 +1,15 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "info": {
+      "en-US": {
+        "title": "Tably – Save, Plan and Shop",
+        "subtitle": "Meals, ratings & grocery lists"
+      },
+      "nl-NL": {
+        "title": "Tably – Save, Plan and Shop",
+        "subtitle": "Meals, ratings & grocery lists"
+      }
+    }
+  }
+}

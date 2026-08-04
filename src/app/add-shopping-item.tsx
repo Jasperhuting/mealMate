@@ -20,6 +20,7 @@ import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import { defaultDepartment, jumboDepartments, type Department } from '@/data/mock-data';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function AddShoppingItemScreen() {
@@ -78,11 +79,13 @@ export default function AddShoppingItemScreen() {
         unit: unit.trim(),
         department,
       });
+      mealMateHaptics.success();
       close();
     } catch {
+      mealMateHaptics.error();
       Alert.alert(
         'Product toevoegen mislukt',
-        'MealMate kon het product niet bewaren. Controleer je internetverbinding en probeer het opnieuw.',
+        'Tably kon het product niet bewaren. Controleer je internetverbinding en probeer het opnieuw.',
       );
     } finally {
       setIsSaving(false);
@@ -218,6 +221,7 @@ export default function AddShoppingItemScreen() {
                     onPress={() => {
                       setDepartment(option);
                       setDepartmentPickerOpen(false);
+                      if (!selected) mealMateHaptics.selection();
                     }}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}

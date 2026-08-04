@@ -9,14 +9,22 @@
       "environment": "preview",
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
-      "environment": "production"
+      "environment": "production",
+      "channel": "production"
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6797860794",
+        "appName": "Tably – Save, Plan and Shop",
+        "metadataPath": "./store.config.json"
+      }
+    }
   }
 }

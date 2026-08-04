@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as Crypto from 'expo-crypto';
+import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import {
   createContext,
@@ -11,6 +12,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Platform } from 'react-native';
@@ -36,14 +38,53 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isProcessingLink = useRef(false);
 
   useEffect(() => {
     let active = true;
+
+    const processAuthUrl = async (url: string | null) => {
+      if (!supabase || !url || !url.includes('auth/callback')) return false;
+      const normalizedUrl = url.replace('#', url.includes('?') ? '&' : '?');
+      const callbackUrl = new URL(normalizedUrl);
+      const code = callbackUrl.searchParams.get('code');
+      const accessToken = callbackUrl.searchParams.get('access_token');
+      const refreshToken = callbackUrl.searchParams.get('refresh_token');
+      const inviteId = callbackUrl.searchParams.get('invite_id');
+
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) throw error;
+      } else if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (error) throw error;
+      }
+
+      if (inviteId) {
+        const { error } = await supabase.rpc('accept_household_email_invite', {
+          target_invite_id: inviteId,
+        });
+        if (error) throw error;
+        clearMealMateSessionCache();
+      }
+      return true;
+    };
 
     const loadSession = async () => {
       if (!supabase) {
         if (active) setIsLoading(false);
         return;
+      }
+      try {
+        isProcessingLink.current = true;
+        await processAuthUrl(await Linking.getInitialURL());
+      } catch (error) {
+        if (__DEV__) console.warn('Tably invitation link failed', error);
+      } finally {
+        isProcessingLink.current = false;
       }
       const { data } = await supabase.auth.getSession();
       const currentSession = data.session?.user.is_anonymous ? null : data.session;
@@ -55,21 +96,40 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
 
     void loadSession();
+    const linkListener = Linking.addEventListener('url', ({ url }) => {
+      isProcessingLink.current = true;
+      setIsLoading(true);
+      void processAuthUrl(url)
+        .catch((error) => {
+          if (__DEV__) console.warn('Tably invitation link failed', error);
+        })
+        .finally(async () => {
+          isProcessingLink.current = false;
+          const { data } = supabase
+            ? await supabase.auth.getSession()
+            : { data: { session: null } };
+          if (active) {
+            setSession(data.session?.user.is_anonymous ? null : data.session);
+            setIsLoading(false);
+          }
+        });
+    });
     const listener = supabase?.auth.onAuthStateChange((_event, nextSession) => {
       const permanentSession = nextSession?.user.is_anonymous ? null : nextSession;
       clearMealMateSessionCache();
       setSession(permanentSession);
-      setIsLoading(false);
+      if (!isProcessingLink.current) setIsLoading(false);
     });
 
     return () => {
       active = false;
+      linkListener.remove();
       listener?.data.subscription.unsubscribe();
     };
   }, []);
 
   const signInWithApple = useCallback(async () => {
-    if (!supabase) throw new Error('MealMate kan de inlogservice niet bereiken.');
+    if (!supabase) throw new Error('Tably kan de inlogservice niet bereiken.');
     if (Platform.OS !== 'ios' || !(await AppleAuthentication.isAvailableAsync())) {
       throw new Error('Inloggen met Apple is alleen beschikbaar op een geschikt Apple-apparaat.');
     }
@@ -107,7 +167,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
-    if (!supabase) throw new Error('MealMate kan de inlogservice niet bereiken.');
+    if (!supabase) throw new Error('Tably kan de inlogservice niet bereiken.');
     const redirectTo = makeRedirectUri({ scheme: 'mealmate', path: 'auth/callback' });
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -132,7 +192,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
-    if (!supabase) throw new Error('MealMate kan de inlogservice niet bereiken.');
+    if (!supabase) throw new Error('Tably kan de inlogservice niet bereiken.');
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
@@ -141,7 +201,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const signUpWithEmail = useCallback(async (email: string, password: string) => {
-    if (!supabase) throw new Error('MealMate kan de inlogservice niet bereiken.');
+    if (!supabase) throw new Error('Tably kan de inlogservice niet bereiken.');
     const normalizedEmail = email.trim().toLowerCase();
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
@@ -162,7 +222,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const deleteAccount = useCallback(async () => {
-    if (!supabase) throw new Error('MealMate kan de accountservice niet bereiken.');
+    if (!supabase) throw new Error('Tably kan de accountservice niet bereiken.');
 
     const { error } = await supabase.rpc('delete_current_user_account');
     if (error) throw error;

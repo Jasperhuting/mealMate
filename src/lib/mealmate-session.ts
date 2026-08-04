@@ -11,7 +11,7 @@ export function ensureMealMateSession() {
     const { data, error } = await supabase.auth.getSession();
     if (error) throw error;
     if (data.session && !data.session.user.is_anonymous) return data.session.user.id;
-    throw new Error('Log eerst in bij MealMate.');
+    throw new Error('Log eerst in bij Tably.');
   })().catch((error) => {
     sessionPromise = null;
     throw error;

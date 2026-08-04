@@ -31,6 +31,13 @@ const unitAliases: Record<string, string> = {
   rollen: 'rollen',
 };
 
+const embeddedQuantityPattern = new RegExp(
+  `^(\\d+(?:[.,]\\d+)?)\\s*(${Object.keys(unitAliases)
+    .sort((a, b) => b.length - a.length)
+    .join('|')})\\s+(.+)$`,
+  'i',
+);
+
 const departmentKeywords: [Department, string[]][] = [
   [
     'Conserven, soepen, sauzen, oliën',
@@ -101,6 +108,31 @@ export function suggestDepartment(name: string): Department {
   return match?.[0] ?? defaultDepartment;
 }
 
+export function normalizeIngredientQuantity(ingredient: Ingredient): Ingredient {
+  const match = ingredient.name.trim().match(embeddedQuantityPattern);
+  if (!match) return ingredient;
+
+  const embeddedAmount = Number(match[1].replace(',', '.'));
+  const embeddedUnit = unitAliases[match[2].toLocaleLowerCase('nl')];
+  const normalizedName = match[3].trim();
+  if (!Number.isFinite(embeddedAmount) || embeddedAmount <= 0 || !embeddedUnit || !normalizedName) {
+    return ingredient;
+  }
+
+  const currentUnit = ingredient.unit.trim().toLocaleLowerCase('nl');
+  const hasPlaceholderQuantity =
+    !Number.isFinite(ingredient.amount) ||
+    ingredient.amount <= 0 ||
+    (ingredient.amount === 1 && ['', 'stuk', 'stuks'].includes(currentUnit));
+
+  return {
+    ...ingredient,
+    name: normalizedName,
+    amount: hasPlaceholderQuantity ? embeddedAmount : ingredient.amount,
+    unit: hasPlaceholderQuantity ? embeddedUnit : ingredient.unit,
+  };
+}
+
 export function parseIngredientLines(value: string): Ingredient[] {
   return value
     .split('\n')
@@ -117,12 +149,12 @@ export function parseIngredientLines(value: string): Ingredient[] {
       const name = parts.slice(nameStart).join(' ').trim() || line;
       const unit = recognizedUnit ?? (amount === 1 ? 'stuk' : 'stuks');
 
-      return {
+      return normalizeIngredientQuantity({
         id: `ingredient-${index}-${slug(name) || 'item'}`,
         name,
         amount,
         unit,
         department: suggestDepartment(name),
-      };
+      });
     });
 }

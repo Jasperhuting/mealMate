@@ -1,4 +1,5 @@
 import { normalizeDepartment, type Department, type Ingredient } from '@/data/mock-data';
+import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import { ensureMealMateSession } from '@/lib/mealmate-session';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
@@ -34,7 +35,7 @@ const ingredientId = (name: string, index: number) =>
 const functionErrorMessage = async (error: unknown) => {
   const fallback = error instanceof Error ? error.message : 'Het recept kon niet door AI worden gelezen.';
   const friendlyFallback = /failed to send a request|network request failed|fetch failed/i.test(fallback)
-    ? 'MealMate kon de AI-server niet bereiken. Controleer je verbinding en probeer het opnieuw.'
+    ? 'Tably kon de AI-server niet bereiken. Controleer je verbinding en probeer het opnieuw.'
     : fallback;
   const context = (error as { context?: { json?: () => Promise<unknown> } } | null)?.context;
   if (!context?.json) return friendlyFallback;
@@ -76,10 +77,12 @@ export async function extractRecipeWithAi(input: RecipeAiInput): Promise<RecipeA
     title: data.title,
     subtitle: data.subtitle,
     minutes: data.minutes,
-    ingredients: data.ingredients.map((ingredient, index) => ({
-      ...ingredient,
-      id: ingredientId(ingredient.name, index),
-      department: normalizeDepartment(ingredient.department),
-    })),
+    ingredients: data.ingredients.map((ingredient, index) =>
+      normalizeIngredientQuantity({
+        ...ingredient,
+        id: ingredientId(ingredient.name, index),
+        department: normalizeDepartment(ingredient.department),
+      }),
+    ),
   };
 }

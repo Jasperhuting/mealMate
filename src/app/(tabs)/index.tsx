@@ -1,19 +1,43 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { BrandLogo } from '@/components/mealmate/brand-logo';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
-import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
+import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import { dateToIso, getWeekRangeLabel, type WeekDay } from '@/data/mock-data';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
+import { getInitial, getUserInitial } from '@/lib/user-initial';
+import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function WeekScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { weekDays, plannedMeals, getRecipe, removeMeal, changeWeek } = useMealMate();
+  const { session } = useAuth();
+  const {
+    weekDays,
+    plannedMeals,
+    leftoverMeals,
+    getRecipe,
+    removeMeal,
+    changeWeek,
+    familyMembers,
+    mealAttendance,
+    setMealAttendance,
+  } = useMealMate();
   const [selectedDayId, setSelectedDayId] = useState(() => {
     const currentDayId = dateToIso(new Date());
     return weekDays.some((day) => day.isoDate === currentDayId)
@@ -21,6 +45,8 @@ export default function WeekScreen() {
       : weekDays[0].isoDate;
   });
   const [isChangingWeek, setIsChangingWeek] = useState(false);
+  const [attendanceDayId, setAttendanceDayId] = useState<string>();
+  const [updatingAttendanceMemberId, setUpdatingAttendanceMemberId] = useState<string>();
   const today = new Date();
   const todayIso = dateToIso(today);
   const todayLabel = today.toLocaleDateString('nl-NL', {
@@ -33,9 +59,28 @@ export default function WeekScreen() {
     weekDays.find((day) => day.isoDate === selectedDayId) ?? weekDays[0];
   const selectedRecipe = getRecipe(plannedMeals[selectedDay.isoDate]);
   const plannedCount = weekDays.filter((day) => plannedMeals[day.isoDate]).length;
+  const currentMember = familyMembers.find(
+    (member) =>
+      member.linkedUserId === session?.user.id ||
+      (Boolean(member.email) &&
+        member.email?.trim().toLowerCase() === session?.user.email?.trim().toLowerCase()),
+  );
+  const attendanceDay = weekDays.find((day) => day.isoDate === attendanceDayId);
+  const attendanceRecipe = attendanceDay
+    ? getRecipe(plannedMeals[attendanceDay.isoDate])
+    : undefined;
+  const orderedFamilyMembers = currentMember
+    ? [currentMember, ...familyMembers.filter((member) => member.id !== currentMember.id)]
+    : familyMembers;
+  const avatarInitial = getInitial(currentMember?.initials) ?? getUserInitial(session?.user);
 
   const openPlanner = (day: WeekDay) => {
     router.push({ pathname: '/add-meal', params: { dayId: day.isoDate } });
+  };
+
+  const openRecipe = (day: WeekDay, recipeId: string) => {
+    setSelectedDayId(day.isoDate);
+    router.push({ pathname: '/recipe-detail', params: { recipeId } });
   };
 
   const showAdjacentWeek = async (direction: -1 | 1) => {
@@ -91,18 +136,24 @@ export default function WeekScreen() {
           { paddingBottom: getMealMateTabBarContentInset(insets.bottom) },
         ]}
         showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="automatic">
+        contentInsetAdjustmentBehavior="never">
         <View style={styles.brandRow}>
           <View>
-            <Text style={styles.brand}>MealMate</Text>
+            <BrandLogo width={112} />
+            <Text style={styles.brandTagline}>Save it. Plan it. Shop for it.</Text>
             <View style={styles.todayLine}>
               <View style={styles.todayDot} />
               <Text style={styles.todayText}>Vandaag · {todayLabel}</Text>
             </View>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>MM</Text>
-          </View>
+          <Pressable
+            onPress={() => router.push('/account')}
+            accessibilityRole="button"
+            accessibilityLabel="Open jouw account"
+            hitSlop={6}
+            style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}>
+            <Text style={styles.avatarText}>{avatarInitial}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.weekPager}>
@@ -126,6 +177,7 @@ export default function WeekScreen() {
         <View style={styles.dayStrip} accessibilityRole="tablist">
           {weekDays.map((day) => {
             const recipe = getRecipe(plannedMeals[day.isoDate]);
+            const leftoverFrom = leftoverMeals[day.isoDate];
             const selected = selectedDay.isoDate === day.isoDate;
             const isToday = day.isoDate === todayIso;
             return (
@@ -134,7 +186,7 @@ export default function WeekScreen() {
                 onPress={() => setSelectedDayId(day.isoDate)}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`${day.label} ${day.date} ${day.month}${recipe ? `, ${recipe.title} gepland` : ', nog leeg'}`}
+                accessibilityLabel={`${day.label} ${day.date} ${day.month}${recipe ? `, ${recipe.title}${leftoverFrom ? ' als restje' : ''} gepland` : ', nog leeg'}`}
                 style={({ pressed }) => [
                   styles.dayButton,
                   selected && styles.dayButtonSelected,
@@ -193,132 +245,284 @@ export default function WeekScreen() {
           })}
         </View>
 
-        <Text style={styles.selectedDate}>
-          {selectedDay.label} {selectedDay.date} {selectedDay.month}
-        </Text>
-
-        {selectedRecipe ? (
-          <View style={styles.selectedMealCard}>
-            <RecipeImage recipe={selectedRecipe} style={styles.selectedMealImage} />
-            <View style={styles.selectedMealCopy}>
-              <Text style={styles.selectedMealTitle} numberOfLines={2}>
-                {selectedRecipe.title}
-              </Text>
-              <Text style={styles.selectedMealMeta}>
-                {selectedRecipe.minutes} min · voor 2 personen
-              </Text>
-              <View style={styles.selectedMealActions}>
-                <View style={styles.plannedLabel}>
-                  <View style={styles.plannedCheck}>
-                    <AppIcon
-                      name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                      tintColor={palette.white}
-                      size={13}
-                    />
-                  </View>
-                  <Text style={styles.plannedLabelText}>Gepland</Text>
-                </View>
-                <Pressable
-                  onPress={() => openPlanner(selectedDay)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [styles.changeButton, pressed && styles.pressed]}>
-                  <Text style={styles.changeButtonText}>Wijzig</Text>
-                </Pressable>
-              </View>
-              <Pressable
-                onPress={confirmRemove}
-                accessibilityRole="button"
-                hitSlop={8}
-                style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
-                <Text style={styles.removeLinkText}>Verwijder uit week</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <Pressable
-            onPress={() => openPlanner(selectedDay)}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.emptyMealCard, pressed && styles.pressed]}>
-            <View style={styles.emptyMealIcon}>
-              <AppIcon
-                name={{ ios: 'plus', android: 'add', web: 'add' }}
-                tintColor={palette.sageDark}
-              />
-            </View>
-            <View style={styles.emptyMealCopy}>
-              <Text style={styles.emptyMealTitle}>Nog niets gepland</Text>
-              <Text style={styles.emptyMealText}>Kies een gerecht voor deze dag</Text>
-            </View>
-            <AppIcon
-              name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-              tintColor={palette.sageDark}
-              size={18}
-            />
-          </Pressable>
-        )}
-
         <View style={styles.listHeading}>
-          <Text style={styles.listTitle}>Deze week</Text>
+          <Text style={styles.listTitle}>Weekplanning</Text>
           <Text style={styles.listMeta}>{plannedCount} van 7 gepland</Text>
         </View>
 
         <View style={styles.weekList}>
-          {weekDays
-            .filter((day) => day.isoDate !== selectedDay.isoDate)
-            .map((day, index, otherDays) => {
+          {weekDays.map((day, index) => {
               const recipe = getRecipe(plannedMeals[day.isoDate]);
+              const leftoverFrom = leftoverMeals[day.isoDate];
+              const leftoverSourceDay = leftoverFrom
+                ? weekDays.find((candidate) => candidate.isoDate === leftoverFrom)
+                : undefined;
+              const selected = day.isoDate === selectedDay.isoDate;
+              const absentMembers = familyMembers.filter(
+                (member) => mealAttendance[day.isoDate]?.[member.id] === false,
+              );
+              const currentMemberIsAbsent = currentMember
+                ? mealAttendance[day.isoDate]?.[currentMember.id] === false
+                : false;
+              const eatingCount = familyMembers.length - absentMembers.length;
+              const attendanceSummary = currentMemberIsAbsent
+                ? 'Jij eet niet mee'
+                : absentMembers.length === 0
+                  ? 'Iedereen eet mee'
+                  : `${eatingCount} van ${familyMembers.length} eten mee`;
               return (
-                <Pressable
+                <View
                   key={day.isoDate}
-                  onPress={() => setSelectedDayId(day.isoDate)}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.weekRow,
-                    index < otherDays.length - 1 && styles.weekRowDivider,
-                    pressed && styles.pressed,
+                  style={[
+                    styles.weekRowWrapper,
+                    selected && styles.weekRowWrapperSelected,
+                    index < weekDays.length - 1 && !selected && styles.weekRowDivider,
                   ]}>
-                  <View style={styles.weekRowDate}>
-                    <Text style={styles.weekRowDay}>{day.label}</Text>
-                    <Text style={styles.weekRowDateText}>{day.date} {day.monthShort}</Text>
-                  </View>
-                  {recipe ? (
-                    <RecipeImage recipe={recipe} style={styles.weekRowImage} />
-                  ) : (
+                  <View style={styles.weekRow}>
                     <Pressable
-                      onPress={(event) => {
-                        event.stopPropagation();
+                      onPress={() => setSelectedDayId(day.isoDate)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Selecteer ${day.label} ${day.date} ${day.month}`}
+                      style={({ pressed }) => [styles.weekRowDate, pressed && styles.pressed]}>
+                      <Text style={[styles.weekRowDay, selected && styles.weekRowDaySelected]}>
+                        {day.label}
+                      </Text>
+                      <Text style={styles.weekRowDateText}>{day.date} {day.monthShort}</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        if (recipe) {
+                          openRecipe(day, recipe.id);
+                          return;
+                        }
                         setSelectedDayId(day.isoDate);
                         openPlanner(day);
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Plan een gerecht voor ${day.label}`}
-                      hitSlop={6}
-                      style={({ pressed }) => [styles.weekRowPlus, pressed && styles.pressed]}>
+                      accessibilityLabel={
+                        recipe
+                          ? `Open details van ${recipe.title}`
+                          : `Plan een gerecht voor ${day.label}`
+                      }
+                      style={({ pressed }) => [styles.weekRecipeLink, pressed && styles.pressed]}>
+                      {recipe ? (
+                        <RecipeImage recipe={recipe} style={styles.weekRowImage} />
+                      ) : (
+                        <View style={styles.weekRowPlus}>
+                          <AppIcon
+                            name={{ ios: 'plus', android: 'add', web: 'add' }}
+                            tintColor={palette.sageDark}
+                            size={17}
+                          />
+                        </View>
+                      )}
+                      <View style={styles.weekRowCopy}>
+                        <Text style={[styles.weekRowTitle, !recipe && styles.weekRowTitleEmpty]} numberOfLines={1}>
+                          {recipe?.title ?? (selected ? 'Nog niets gepland' : 'Gerecht kiezen')}
+                        </Text>
+                        {recipe ? (
+                          <Text
+                            style={[
+                              styles.weekRowMeta,
+                              currentMemberIsAbsent && styles.weekRowMetaImportant,
+                            ]}
+                            numberOfLines={1}>
+                            {leftoverFrom
+                              ? `Restje van ${leftoverSourceDay?.label.toLowerCase() ?? 'eerder'} · ${attendanceSummary.toLowerCase()}`
+                              : `${recipe.minutes} min · ${attendanceSummary.toLowerCase()}`}
+                          </Text>
+                        ) : (
+                          <Text style={styles.weekRowMeta}>
+                            {selected ? 'Kies een gerecht voor deze dag' : 'Nog niets gepland'}
+                          </Text>
+                        )}
+                      </View>
                       <AppIcon
-                        name={{ ios: 'plus', android: 'add', web: 'add' }}
-                        tintColor={palette.sageDark}
+                        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                        tintColor={palette.textSoft}
                         size={17}
                       />
                     </Pressable>
-                  )}
-                  <View style={styles.weekRowCopy}>
-                    <Text style={[styles.weekRowTitle, !recipe && styles.weekRowTitleEmpty]} numberOfLines={1}>
-                      {recipe?.title ?? 'Gerecht kiezen'}
-                    </Text>
-                    {recipe ? (
-                      <Text style={styles.weekRowMeta}>{recipe.minutes} min · voor 2 personen</Text>
-                    ) : null}
                   </View>
-                  <AppIcon
-                    name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                    tintColor={palette.textSoft}
-                    size={17}
-                  />
-                </Pressable>
+                  {selected ? (
+                    <>
+                      {recipe ? (
+                        <View style={styles.selectedRowActions}>
+                          {familyMembers.length > 0 ? (
+                            <Pressable
+                              onPress={() => setAttendanceDayId(day.isoDate)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${attendanceSummary}. Aanwezigheid wijzigen voor ${day.label}`}
+                              style={({ pressed }) => [
+                                styles.attendanceAction,
+                                currentMemberIsAbsent && styles.attendanceActionImportant,
+                                pressed && styles.pressed,
+                              ]}>
+                              <AppIcon
+                                name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                                tintColor={
+                                  currentMemberIsAbsent ? palette.danger : palette.sageDark
+                                }
+                                size={16}
+                              />
+                              <Text
+                                style={[
+                                  styles.attendanceActionText,
+                                  currentMemberIsAbsent && styles.attendanceActionTextImportant,
+                                ]}
+                                numberOfLines={1}>
+                                {attendanceSummary}
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <View style={styles.actionSpacer} />
+                          )}
+                          <Pressable
+                            onPress={confirmRemove}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${recipe.title} verwijderen van ${day.label}`}
+                            hitSlop={6}
+                            style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
+                            <AppIcon
+                              name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                              tintColor={palette.textMuted}
+                              size={17}
+                            />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => openPlanner(day)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Kies een ander gerecht voor ${day.label}`}
+                            style={({ pressed }) => [styles.changeButton, pressed && styles.pressed]}>
+                            <Text style={styles.changeButtonText}>Ander gerecht</Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <Pressable
+                          onPress={() => openPlanner(day)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Plan een gerecht voor ${day.label}`}
+                          style={({ pressed }) => [styles.planSelectedDay, pressed && styles.pressed]}>
+                          <Text style={styles.planSelectedDayText}>Gerecht kiezen</Text>
+                          <AppIcon
+                            name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                            tintColor={palette.sageDark}
+                            size={16}
+                          />
+                        </Pressable>
+                      )}
+                    </>
+                  ) : null}
+                </View>
               );
             })}
         </View>
       </ScrollView>
+      <Modal
+        visible={Boolean(attendanceDay)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !updatingAttendanceMemberId && setAttendanceDayId(undefined)}>
+        <View style={styles.modalOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Aanwezigheid sluiten"
+            style={StyleSheet.absoluteFill}
+            onPress={() => !updatingAttendanceMemberId && setAttendanceDayId(undefined)}
+          />
+          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>AANWEZIGHEID</Text>
+            <Text style={styles.modalTitle}>
+              Wie eet er mee op {attendanceDay?.label.toLowerCase()}?
+            </Text>
+            {attendanceRecipe ? (
+              <Text style={styles.modalText}>{attendanceRecipe.title}</Text>
+            ) : null}
+            <ScrollView
+              style={styles.attendanceOptionsScroll}
+              contentContainerStyle={styles.attendanceOptions}
+              showsVerticalScrollIndicator={false}
+              bounces={orderedFamilyMembers.length > 3}>
+              {orderedFamilyMembers.map((member) => {
+                const isCurrentMember = member.id === currentMember?.id;
+                const isEating = attendanceDay
+                  ? mealAttendance[attendanceDay.isoDate]?.[member.id] !== false
+                  : true;
+                const isUpdating = updatingAttendanceMemberId === member.id;
+                return (
+                  <Pressable
+                    key={member.id}
+                    disabled={Boolean(updatingAttendanceMemberId)}
+                    onPress={async () => {
+                      if (!attendanceDay) return;
+                      setUpdatingAttendanceMemberId(member.id);
+                      try {
+                        await setMealAttendance(attendanceDay.isoDate, member.id, !isEating);
+                        mealMateHaptics.selection();
+                      } catch {
+                        mealMateHaptics.error();
+                        Alert.alert('Aanwezigheid opslaan mislukt', 'Probeer het opnieuw.');
+                      } finally {
+                        setUpdatingAttendanceMemberId(undefined);
+                      }
+                    }}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{
+                      checked: isEating,
+                      disabled: Boolean(updatingAttendanceMemberId),
+                    }}
+                    accessibilityLabel={`${isCurrentMember ? 'Jij' : member.name} eet ${isEating ? 'wel' : 'niet'} mee`}
+                    style={({ pressed }) => [
+                      styles.attendanceOption,
+                      isEating && styles.attendanceOptionSelected,
+                      pressed && styles.pressed,
+                    ]}>
+                    <View style={[styles.memberDot, { backgroundColor: member.color }]} />
+                    <View style={styles.attendanceOptionCopy}>
+                      <Text
+                        style={[
+                          styles.attendanceOptionName,
+                          isEating && styles.attendanceOptionNameSelected,
+                        ]}>
+                        {isCurrentMember ? 'Jij' : member.name}
+                      </Text>
+                      <Text style={styles.attendanceOptionStatus}>
+                        {isEating ? 'Eet mee' : 'Eet niet mee'}
+                      </Text>
+                    </View>
+                    {isUpdating ? (
+                      <ActivityIndicator color={palette.sageDark} size="small" />
+                    ) : (
+                      <View
+                        style={[
+                          styles.attendanceCheckbox,
+                          isEating && styles.attendanceCheckboxSelected,
+                        ]}>
+                        {isEating ? (
+                          <AppIcon
+                            name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                            tintColor={palette.white}
+                            size={14}
+                          />
+                        ) : null}
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              onPress={() => setAttendanceDayId(undefined)}
+              disabled={Boolean(updatingAttendanceMemberId)}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.modalDoneButton, pressed && styles.pressed]}>
+              <Text style={styles.modalDoneButtonText}>Klaar</Text>
+            </Pressable>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -350,7 +554,7 @@ function WeekButton({
             : { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }
         }
         tintColor={palette.sageDark}
-        size={20}
+        size={18}
       />
     </Pressable>
   );
@@ -365,7 +569,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
-  brand: { color: palette.sageDark, fontSize: 25, fontWeight: '800', letterSpacing: -0.7 },
+  brandTagline: { color: palette.textMuted, fontSize: 10, fontWeight: '600', marginTop: 1 },
   todayLine: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 3 },
   todayDot: {
     backgroundColor: palette.sage,
@@ -387,7 +591,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
   },
   weekButton: {
     alignItems: 'center',
@@ -405,7 +609,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     flexDirection: 'row',
     gap: 3,
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
     padding: spacing.xs,
   },
   dayButton: {
@@ -454,71 +658,16 @@ const styles = StyleSheet.create({
   dayThumbnail: { height: 26, width: 26 },
   plannedDot: { backgroundColor: palette.sage, borderRadius: radius.pill, height: 10, width: 10 },
   plannedDotSelected: { backgroundColor: palette.sageDark },
-  selectedDate: {
-    color: palette.text,
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    marginTop: spacing.xl,
-  },
-  selectedMealCard: {
-    ...shadow.card,
-    alignItems: 'center',
-    backgroundColor: palette.surface,
-    borderRadius: radius.lg,
-    flexDirection: 'row',
-    marginTop: spacing.md,
-    padding: spacing.sm,
-  },
-  selectedMealImage: { borderRadius: radius.md, height: 92, width: 92 },
-  selectedMealCopy: { flex: 1, marginLeft: spacing.md, paddingRight: spacing.sm },
-  selectedMealTitle: { color: palette.text, fontSize: 17, fontWeight: '700', lineHeight: 21 },
-  selectedMealMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
-  selectedMealActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.md,
-  },
-  plannedLabel: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  plannedCheck: {
-    alignItems: 'center',
-    backgroundColor: palette.sageDark,
-    borderRadius: radius.pill,
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
-  },
-  plannedLabelText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   changeButton: {
     borderColor: palette.sageDark,
     borderRadius: radius.pill,
     borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 44,
     paddingHorizontal: spacing.md,
-    paddingVertical: 7,
   },
   changeButtonText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
-  removeLink: { alignSelf: 'flex-start', marginTop: spacing.sm, paddingVertical: 3 },
-  removeLinkText: { color: palette.textSoft, fontSize: 10, fontWeight: '600' },
-  emptyMealCard: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.lg,
-    flexDirection: 'row',
-    marginTop: spacing.lg,
-    padding: spacing.lg,
-  },
-  emptyMealIcon: {
-    alignItems: 'center',
-    backgroundColor: palette.white,
-    borderRadius: radius.md,
-    height: 54,
-    justifyContent: 'center',
-    width: 54,
-  },
-  emptyMealCopy: { flex: 1, marginHorizontal: spacing.md },
-  emptyMealTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
-  emptyMealText: { color: palette.textMuted, fontSize: 12, marginTop: 4 },
+  removeLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, width: 40 },
   listHeading: {
     alignItems: 'baseline',
     flexDirection: 'row',
@@ -527,11 +676,31 @@ const styles = StyleSheet.create({
   },
   listTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   listMeta: { color: palette.textSoft, fontSize: 12, fontWeight: '600' },
-  weekList: { marginTop: spacing.md },
-  weekRow: { alignItems: 'center', flexDirection: 'row', minHeight: 64, paddingVertical: 6 },
+  weekList: {
+    backgroundColor: palette.surface,
+    borderRadius: radius.lg,
+    marginTop: spacing.md,
+    overflow: 'hidden',
+  },
+  weekRowWrapper: { backgroundColor: palette.surface },
+  weekRowWrapperSelected: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    margin: 4,
+  },
+  weekRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    minHeight: 62,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
   weekRowDivider: { borderBottomColor: palette.border, borderBottomWidth: 1 },
-  weekRowDate: { width: 80 },
+  weekRowDate: { justifyContent: 'center', minHeight: 50, width: 80 },
   weekRowDay: { color: palette.text, fontSize: 13, fontWeight: '600' },
+  weekRowDaySelected: { color: palette.sageDark, fontWeight: '800' },
   weekRowDateText: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
   weekRowImage: { borderRadius: radius.pill, height: 38, width: 38 },
   weekRowPlus: {
@@ -542,9 +711,114 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 38,
   },
+  weekRecipeLink: { alignItems: 'center', flex: 1, flexDirection: 'row', minHeight: 50 },
   weekRowCopy: { flex: 1, marginHorizontal: spacing.md },
   weekRowTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
   weekRowTitleEmpty: { color: palette.sageDark },
   weekRowMeta: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
+  weekRowMetaImportant: { color: palette.danger, fontWeight: '800' },
+  selectedRowActions: {
+    alignItems: 'center',
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginHorizontal: spacing.sm,
+    minHeight: 54,
+    paddingVertical: 5,
+  },
+  attendanceAction: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  attendanceActionImportant: {
+    backgroundColor: '#F4E5E3',
+    borderColor: '#E5C9C6',
+  },
+  attendanceActionText: { color: palette.sageDark, flex: 1, fontSize: 11, fontWeight: '700' },
+  attendanceActionTextImportant: { color: palette.danger, fontWeight: '800' },
+  actionSpacer: { flex: 1 },
+  planSelectedDay: {
+    alignItems: 'center',
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
+  planSelectedDayText: { color: palette.sageDark, fontSize: 13, fontWeight: '700' },
+  modalOverlay: {
+    backgroundColor: 'rgba(24, 28, 23, 0.38)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: palette.background,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    flexShrink: 1,
+    maxHeight: '88%',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    backgroundColor: palette.border,
+    borderRadius: radius.pill,
+    height: 4,
+    marginBottom: spacing.lg,
+    width: 44,
+  },
+  modalEyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  modalTitle: { color: palette.text, fontSize: 24, fontWeight: '700', marginTop: spacing.sm },
+  modalText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
+  attendanceOptionsScroll: { flexShrink: 1, marginTop: spacing.lg },
+  attendanceOptions: { gap: spacing.sm },
+  attendanceOption: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 62,
+    paddingHorizontal: spacing.lg,
+  },
+  attendanceOptionSelected: { backgroundColor: palette.sageSoft, borderColor: palette.sage },
+  memberDot: { borderRadius: radius.pill, height: 10, width: 10 },
+  attendanceOptionCopy: { flex: 1, marginLeft: spacing.md },
+  attendanceOptionName: { color: palette.text, fontSize: 15, fontWeight: '700' },
+  attendanceOptionNameSelected: { color: palette.sageDark },
+  attendanceOptionStatus: { color: palette.textMuted, fontSize: 12, marginTop: 3 },
+  attendanceCheckbox: {
+    alignItems: 'center',
+    borderColor: palette.border,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  attendanceCheckboxSelected: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
+  modalDoneButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageDark,
+    borderRadius: radius.pill,
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
+    minHeight: 48,
+  },
+  modalDoneButtonText: { color: palette.white, fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.7 },
 });

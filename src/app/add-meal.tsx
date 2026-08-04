@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,24 +8,91 @@ import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function AddMealScreen() {
   const { dayId } = useLocalSearchParams<{ dayId: string }>();
   const router = useRouter();
-  const { recipes, weekDays, plannedMeals, planMeal } = useMealMate();
+  const {
+    recipes,
+    weekDays,
+    plannedMeals,
+    leftoverMeals,
+    planMeal,
+    familyMembers,
+    ratings,
+    mealAttendance,
+  } = useMealMate();
   const initialRecipeId = typeof dayId === 'string' ? plannedMeals[dayId] : undefined;
+  const initialLeftoverFrom = typeof dayId === 'string' ? leftoverMeals[dayId] : undefined;
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | undefined>();
+  const [leftoverFrom, setLeftoverFrom] = useState<string | undefined>();
   const [atHomeIds, setAtHomeIds] = useState<string[]>([]);
   const selectedRecipe = useMemo(
     () => recipes.find((recipe) => recipe.id === selectedRecipeId),
     [recipes, selectedRecipeId],
   );
   const day = weekDays.find((item) => item.id === dayId || item.isoDate === dayId);
+  const leftoverOptions = useMemo(() => {
+    if (!day) return [];
+    const seenRecipes = new Set<string>();
+    return weekDays
+      .filter((candidate) => candidate.isoDate < day.isoDate && plannedMeals[candidate.isoDate])
+      .reverse()
+      .flatMap((candidate) => {
+        const recipeId = plannedMeals[candidate.isoDate];
+        if (!recipeId || seenRecipes.has(recipeId)) return [];
+        const recipe = recipes.find((item) => item.id === recipeId);
+        if (!recipe) return [];
+        seenRecipes.add(recipeId);
+        const sourceDate = leftoverMeals[candidate.isoDate] ?? candidate.isoDate;
+        const sourceDay = weekDays.find((item) => item.isoDate === sourceDate) ?? candidate;
+        return [{ recipe, sourceDate, sourceDay }];
+      });
+  }, [day, leftoverMeals, plannedMeals, recipes, weekDays]);
+  const eatingMembers = useMemo(
+    () => familyMembers.filter(
+      (member) => mealAttendance[day?.isoDate ?? '']?.[member.id] !== false,
+    ),
+    [day?.isoDate, familyMembers, mealAttendance],
+  );
+  const absentMembers = useMemo(
+    () => familyMembers.filter(
+      (member) => mealAttendance[day?.isoDate ?? '']?.[member.id] === false,
+    ),
+    [day?.isoDate, familyMembers, mealAttendance],
+  );
+  const recipeScore = useCallback((recipe: Recipe) => {
+    const scores = eatingMembers
+      .map((member) => ratings[recipe.id]?.[member.id])
+      .filter((score): score is number => typeof score === 'number');
+    return scores.length ? scores.reduce((total, score) => total + score, 0) / scores.length : null;
+  }, [eatingMembers, ratings]);
+  const sortedRecipes = useMemo(
+    () => [...recipes].sort((a, b) => {
+      const aScore = recipeScore(a);
+      const bScore = recipeScore(b);
+      if (aScore === null && bScore === null) return a.title.localeCompare(b.title, 'nl');
+      if (aScore === null) return 1;
+      if (bScore === null) return -1;
+      return bScore - aScore;
+    }),
+    [recipeScore, recipes],
+  );
 
   const selectRecipe = (recipe: Recipe) => {
     setSelectedRecipeId(recipe.id);
+    setLeftoverFrom(undefined);
     setAtHomeIds([]);
+    mealMateHaptics.selection();
+  };
+
+  const selectLeftover = (recipe: Recipe, sourceDate: string) => {
+    setSelectedRecipeId(recipe.id);
+    setLeftoverFrom(sourceDate);
+    setAtHomeIds([]);
+    mealMateHaptics.selection();
   };
 
   const toggleAtHome = (ingredientId: string) => {
@@ -34,11 +101,19 @@ export default function AddMealScreen() {
         ? current.filter((id) => id !== ingredientId)
         : [...current, ingredientId],
     );
+    mealMateHaptics.selection();
   };
 
-  const confirm = () => {
+  const clearAtHome = () => {
+    if (atHomeIds.length === 0) return;
+    setAtHomeIds([]);
+    mealMateHaptics.selection();
+  };
+
+  const confirm = async () => {
     if (!selectedRecipe || typeof dayId !== 'string') return;
-    planMeal(dayId, selectedRecipe.id, atHomeIds);
+    await planMeal(dayId, selectedRecipe.id, atHomeIds, leftoverFrom);
+    mealMateHaptics.success();
     router.back();
   };
 
@@ -52,7 +127,7 @@ export default function AddMealScreen() {
           backLabel="Terug naar gerecht kiezen"
         />
         <FlatList
-          data={selectedRecipe.ingredients}
+          data={leftoverFrom ? [] : selectedRecipe.ingredients}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -64,24 +139,58 @@ export default function AddMealScreen() {
                 <Text style={styles.stepActive}>2 Voorraad</Text>
               </View>
               <Text style={styles.eyebrow}>{day?.label.toUpperCase()} {day?.date} {day?.month.toUpperCase()}</Text>
-              <Text style={styles.title}>Wat heb je al in huis?</Text>
+              <Text style={styles.title}>
+                {leftoverFrom ? 'Plan dit als restje' : 'Wat heb je al in huis?'}
+              </Text>
               <Text style={styles.subtitle}>
-                Vink ingrediënten aan die niet op de boodschappenlijst hoeven.
+                {leftoverFrom
+                  ? 'Dit gerecht staat al eerder in de week. Er komen geen extra ingrediënten op je boodschappenlijst.'
+                  : 'Vink ingrediënten aan die niet op de boodschappenlijst hoeven.'}
               </Text>
               <View style={styles.selectedRecipeCard}>
                 <RecipeImage recipe={selectedRecipe} style={styles.selectedImage} />
                 <View style={styles.selectedCopy}>
                   <Text style={styles.selectedTitle}>{selectedRecipe.title}</Text>
-                  <Text style={styles.selectedMeta}>{selectedRecipe.ingredients.length} ingrediënten</Text>
+                  <Text style={styles.selectedMeta}>
+                    {leftoverFrom
+                      ? `Restje van ${weekDays.find((item) => item.isoDate === leftoverFrom)?.label.toLowerCase() ?? 'eerder'}`
+                      : `${selectedRecipe.ingredients.length} ingrediënten`}
+                  </Text>
                 </View>
                 <Pressable
-                  onPress={() => setSelectedRecipeId(undefined)}
+                  onPress={() => {
+                    setSelectedRecipeId(undefined);
+                    setLeftoverFrom(undefined);
+                  }}
                   accessibilityRole="button"
                   style={styles.changeButton}>
                   <Text style={styles.changeText}>Wijzig</Text>
                 </Pressable>
               </View>
-              <Text style={styles.listTitle}>Tik aan wat al aanwezig is</Text>
+              {!leftoverFrom ? (
+                <View style={styles.inventoryHeading}>
+                  <Text style={styles.inventoryTitle}>Tik aan wat al aanwezig is</Text>
+                  <Pressable
+                    onPress={clearAtHome}
+                    disabled={atHomeIds.length === 0}
+                    accessibilityRole="button"
+                    accessibilityLabel="Zet alle aanwezige ingrediënten uit"
+                    accessibilityState={{ disabled: atHomeIds.length === 0 }}
+                    style={({ pressed }) => [
+                      styles.clearSelectionButton,
+                      atHomeIds.length === 0 && styles.clearSelectionButtonDisabled,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.clearSelectionText,
+                        atHomeIds.length === 0 && styles.clearSelectionTextDisabled,
+                      ]}>
+                      Alles uitzetten
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </View>
           }
           renderItem={({ item }) => (
@@ -96,16 +205,22 @@ export default function AddMealScreen() {
         />
         <View style={styles.bottomBar}>
           <View style={styles.bottomCopy}>
-            <Text style={styles.bottomCount}>{atHomeIds.length} al in huis</Text>
+            <Text style={styles.bottomCount}>
+              {leftoverFrom ? 'Geen extra boodschappen' : `${atHomeIds.length} al in huis`}
+            </Text>
             <Text style={styles.bottomMeta}>
-              {selectedRecipe.ingredients.length - atHomeIds.length} naar boodschappen
+              {leftoverFrom
+                ? 'Je gebruikt wat al bereid is'
+                : `${selectedRecipe.ingredients.length - atHomeIds.length} naar boodschappen`}
             </Text>
           </View>
           <Pressable
-            onPress={confirm}
+            onPress={() => void confirm()}
             accessibilityRole="button"
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-            <Text style={styles.primaryButtonText}>Plan gerecht</Text>
+            <Text style={styles.primaryButtonText}>
+              {leftoverFrom ? 'Plan als restje' : 'Plan gerecht'}
+            </Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -116,7 +231,7 @@ export default function AddMealScreen() {
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ModalScreenHeader title="Gerecht plannen" closeLabel="Sluit gerecht plannen" />
       <FlatList
-        data={recipes}
+        data={sortedRecipes}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -132,6 +247,56 @@ export default function AddMealScreen() {
             <Text style={styles.subtitle}>
               {initialRecipeId ? 'Vervang het huidige gerecht voor deze dag.' : 'Wat willen jullie deze dag eten?'}
             </Text>
+            {absentMembers.length > 0 ? (
+              <View style={styles.tasteHint}>
+                <AppIcon
+                  name={{ ios: 'person.crop.circle.badge.minus', android: 'person_remove', web: 'person_remove' }}
+                  tintColor={palette.sageDark}
+                  size={17}
+                />
+                <Text style={styles.tasteHintText}>
+                  Gesorteerd voor wie mee-eet. {absentMembers.map((member) => member.name).join(', ')} telt niet mee.
+                </Text>
+              </View>
+            ) : null}
+            {leftoverOptions.length > 0 ? (
+              <View style={styles.leftoverSection}>
+                <View style={styles.leftoverHeading}>
+                  <View style={styles.leftoverIcon}>
+                    <AppIcon
+                      name={{ ios: 'arrow.counterclockwise', android: 'history', web: 'history' }}
+                      tintColor={palette.sageDark}
+                      size={18}
+                    />
+                  </View>
+                  <View style={styles.leftoverHeadingCopy}>
+                    <Text style={styles.leftoverTitle}>Restje eten</Text>
+                    <Text style={styles.leftoverSubtitle}>
+                      Gebruik een gerecht van eerder deze week opnieuw.
+                    </Text>
+                  </View>
+                </View>
+                {leftoverOptions.map(({ recipe, sourceDate, sourceDay }) => (
+                  <Pressable
+                    key={`${recipe.id}-${sourceDate}`}
+                    onPress={() => selectLeftover(recipe, sourceDate)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Plan ${recipe.title} als restje van ${sourceDay.label}`}
+                    style={({ pressed }) => [styles.leftoverRow, pressed && styles.pressed]}>
+                    <RecipeImage recipe={recipe} style={styles.leftoverImage} />
+                    <View style={styles.leftoverRowCopy}>
+                      <Text style={styles.leftoverRecipeTitle}>{recipe.title}</Text>
+                      <Text style={styles.leftoverDay}>Van {sourceDay.label.toLowerCase()}</Text>
+                    </View>
+                    <AppIcon
+                      name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                      tintColor={palette.sageDark}
+                      size={17}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
             <Pressable
               onPress={() => router.push('/add-recipe')}
               accessibilityRole="button"
@@ -171,7 +336,14 @@ export default function AddMealScreen() {
               <View style={styles.recipeCopy}>
                 <Text style={styles.recipeTitle}>{item.title}</Text>
                 <Text style={styles.recipeMeta}>{item.minutes} min · {item.ingredients.length} ingrediënten</Text>
-                {selected ? <Text style={styles.currentLabel}>Nu gepland</Text> : null}
+                {recipeScore(item) !== null ? (
+                  <Text style={styles.recipeScore}>★ {recipeScore(item)?.toFixed(1)} voor wie mee-eet</Text>
+                ) : null}
+                {selected ? (
+                  <Text style={styles.currentLabel}>
+                    {initialLeftoverFrom ? 'Nu gepland als restje' : 'Nu gepland'}
+                  </Text>
+                ) : null}
               </View>
               <AppIcon
                 name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
@@ -234,6 +406,39 @@ const styles = StyleSheet.create({
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
   subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
+  tasteHint: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.md, flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md },
+  tasteHintText: { color: palette.sageDark, flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 16 },
+  leftoverSection: {
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.lg,
+    marginTop: spacing.xl,
+    padding: spacing.md,
+  },
+  leftoverHeading: { alignItems: 'center', flexDirection: 'row' },
+  leftoverIcon: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderRadius: radius.pill,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  leftoverHeadingCopy: { flex: 1, marginLeft: spacing.md },
+  leftoverTitle: { color: palette.sageDark, fontSize: 15, fontWeight: '800' },
+  leftoverSubtitle: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
+  leftoverRow: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    marginTop: spacing.sm,
+    minHeight: 58,
+    padding: spacing.sm,
+  },
+  leftoverImage: { borderRadius: radius.pill, height: 42, width: 42 },
+  leftoverRowCopy: { flex: 1, marginHorizontal: spacing.md },
+  leftoverRecipeTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
+  leftoverDay: { color: palette.sageDark, fontSize: 11, fontWeight: '700', marginTop: 3 },
   newRecipeButton: {
     alignItems: 'center',
     borderColor: palette.sage,
@@ -272,6 +477,7 @@ const styles = StyleSheet.create({
   recipeCopy: { flex: 1, marginHorizontal: spacing.md },
   recipeTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
   recipeMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
+  recipeScore: { color: palette.star, fontSize: 11, fontWeight: '700', marginTop: 5 },
   currentLabel: { color: palette.sage, fontSize: 11, fontWeight: '700', marginTop: 6 },
   selectedRecipeCard: {
     alignItems: 'center',
@@ -287,6 +493,25 @@ const styles = StyleSheet.create({
   selectedMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
   changeButton: { padding: spacing.md },
   changeText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
+  inventoryHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    marginTop: spacing.xl,
+  },
+  inventoryTitle: { color: palette.text, flex: 1, fontSize: 19, fontWeight: '700' },
+  clearSelectionButton: {
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.pill,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
+  },
+  clearSelectionButtonDisabled: { backgroundColor: palette.surfaceMuted },
+  clearSelectionText: { color: palette.sageDark, fontSize: 11, fontWeight: '800' },
+  clearSelectionTextDisabled: { color: palette.textSoft },
   ingredientRow: {
     alignItems: 'center',
     backgroundColor: palette.surface,

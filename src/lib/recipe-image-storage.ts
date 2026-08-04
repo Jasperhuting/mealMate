@@ -31,3 +31,17 @@ export async function persistRecipeImage(image: RecipeImageInput) {
   await new File(image.uri).copy(destination);
   return destination.uri;
 }
+
+export function removePersistedRecipeImage(uri: string | null) {
+  if (Platform.OS === 'web' || !uri) return;
+
+  const imageDirectory = new Directory(Paths.document, 'recipe-images');
+  if (!uri.startsWith(imageDirectory.uri)) return;
+
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch (error) {
+    if (__DEV__) console.warn('Tably local recipe image cleanup failed', error);
+  }
+}

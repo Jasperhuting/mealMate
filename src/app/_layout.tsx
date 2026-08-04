@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AuthLoadingScreen, LoginScreen } from '@/components/mealmate/login-screen';
 import { palette } from '@/constants/mealmate-theme';
 import { AuthProvider, useAuth } from '@/state/auth-provider';
+import { HapticsProvider } from '@/state/haptics-provider';
 import { MealMateProvider } from '@/state/meal-mate-provider';
 
 const mealMateTheme = {
@@ -20,12 +21,14 @@ const mealMateTheme = {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <ThemeProvider value={mealMateTheme}>
-        <StatusBar style="dark" />
-        <AuthenticatedApp />
-      </ThemeProvider>
-    </AuthProvider>
+    <HapticsProvider>
+      <AuthProvider>
+        <ThemeProvider value={mealMateTheme}>
+          <StatusBar style="dark" />
+          <AuthenticatedApp />
+        </ThemeProvider>
+      </AuthProvider>
+    </HapticsProvider>
   );
 }
 
@@ -77,10 +80,26 @@ function AuthenticatedApp() {
             }}
           />
           <Stack.Screen
+            name="recipe-detail"
+            options={{
+              presentation: 'modal',
+              title: 'Gerecht',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
             name="family-sharing"
             options={{
               presentation: 'modal',
               title: 'Gezin delen',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
+            name="account"
+            options={{
+              presentation: 'modal',
+              title: 'Account',
               headerBackVisible: false,
             }}
           />

@@ -1,6 +1,8 @@
-# MealMate
+# Tably
 
-MealMate helpt huishoudens samen recepten onthouden, een weekmenu plannen en daar automatisch een boodschappenlijst van maken.
+**Save it. Plan it. Shop for it.**
+
+Tably helpt huishoudens samen recepten onthouden, een weekmenu plannen en daar automatisch een boodschappenlijst van maken.
 
 ## Wat nu al werkt
 
@@ -18,7 +20,7 @@ MealMate helpt huishoudens samen recepten onthouden, een weekmenu plannen en daa
 - een eenmalige gezinscode maken en op een ander toestel deelnemen aan hetzelfde huishouden.
 - registreren en inloggen via Apple of Google, met een afgeschermde app totdat de sessie geldig is.
 
-MealMate begint met een leeg huishouden. Recepten, ingrediënten, receptfoto's, weekmenu, voorraadkeuzes, boodschappen en persoonlijke beoordelingen worden in Supabase opgeslagen; een lokale cache houdt de laatst geladen recepten beschikbaar.
+Tably begint met een leeg huishouden. Recepten, ingrediënten, receptfoto's, weekmenu, voorraadkeuzes, boodschappen en persoonlijke beoordelingen worden in Supabase opgeslagen; een lokale cache houdt de laatst geladen recepten beschikbaar.
 
 ## Starten
 
@@ -30,7 +32,7 @@ Voor een webweergave kun je `npm run web` gebruiken.
 
 ## Supabase
 
-MealMate is gekoppeld aan een eigen Supabase-project in `eu-central-1`. De database bevat profielen, huishoudens, recepten, ingrediënten, weekplannen, beoordelingen en boodschappen. Row Level Security beperkt toegang tot leden van hetzelfde huishouden en receptfoto's staan in een privébucket.
+Tably is gekoppeld aan een eigen Supabase-project in `eu-central-1`. De database bevat profielen, huishoudens, recepten, ingrediënten, weekplannen, beoordelingen en boodschappen. Row Level Security beperkt toegang tot leden van hetzelfde huishouden en receptfoto's staan in een privébucket.
 
 Totdat het accountscherm af is, meldt de app een nieuw apparaat automatisch anoniem aan en maakt hij één huishouden aan. Dit account kan later aan een definitieve inlogmethode worden gekoppeld.
 
@@ -44,14 +46,14 @@ supabase secrets set OPENAI_RECIPE_MODEL=gpt-5.6
 supabase functions deploy parse-recipe --use-api
 ```
 
-De functie vereist een geldige Supabase-gebruiker. Totdat het gezinsaccountscherm er is, maakt de app daarvoor automatisch een anonieme gebruiker aan. Zo kan MealMate recepttekst, links en foto's verwerken zonder de geheime OpenAI-sleutel op de telefoon te bewaren.
+De functie vereist een geldige Supabase-gebruiker. Totdat het gezinsaccountscherm er is, maakt de app daarvoor automatisch een anonieme gebruiker aan. Zo kan Tably recepttekst, links en foto's verwerken zonder de geheime OpenAI-sleutel op de telefoon te bewaren.
 
 De AI-functie is al gepubliceerd; alleen het OpenAI-servergeheim moet nog worden toegevoegd.
 
 ## Belangrijkste mappen
 
 - `src/app`: schermen en navigatie;
-- `src/state`: lokale MealMate-logica;
+- `src/state`: lokale Tably-logica;
 - `src/data`: voorbeeldrecepten en ingrediënten;
 - `src/lib`: voorbereiding op externe diensten;
 - `supabase/functions`: beveiligde AI-verwerking op de server;

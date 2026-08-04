@@ -1,5 +1,6 @@
 import { clearMealMateHouseholdCache, ensureMealMateSession } from '@/lib/mealmate-session';
 import { supabase } from '@/lib/supabase';
+import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from '@supabase/supabase-js';
 
 export type HouseholdInvite = {
   code: string;
@@ -35,4 +36,28 @@ export async function joinHousehold(inviteCode: string) {
     throw error;
   }
   clearMealMateHouseholdCache();
+}
+
+export async function inviteFamilyMember(name: string, email: string) {
+  if (!supabase) throw new Error('Supabase is nog niet geconfigureerd.');
+  await ensureMealMateSession();
+  const { data, error } = await supabase.functions.invoke('invite-family-member', {
+    body: { name: name.trim(), email: email.trim().toLowerCase() },
+  });
+  if (error instanceof FunctionsHttpError) {
+    let message = 'De uitnodigingsservice gaf een fout terug.';
+    try {
+      const payload = (await error.context.json()) as { error?: string };
+      if (payload.error) message = payload.error;
+    } catch {
+      // De gateway kan een lege foutrespons geven; gebruik dan de Nederlandse fallback.
+    }
+    throw new Error(message);
+  }
+  if (error instanceof FunctionsRelayError || error instanceof FunctionsFetchError) {
+    throw new Error('De uitnodigingsservice is tijdelijk niet bereikbaar. Probeer het opnieuw.');
+  }
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+  return data as { inviteId: string; personId: string };
 }

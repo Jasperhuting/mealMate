@@ -16,8 +16,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
-import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
+import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import { jumboDepartments, type Department } from '@/data/mock-data';
+import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { type ShoppingItem, useMealMate } from '@/state/meal-mate-provider';
 
 const departmentOrder: readonly Department[] = jumboDepartments;
@@ -47,12 +48,28 @@ export default function ShoppingScreen() {
   } = useMealMate();
   const [groupMode, setGroupMode] = useState<GroupMode>('department');
   const [showCompleted, setShowCompleted] = useState(true);
+  const [actionTarget, setActionTarget] = useState<{
+    itemId: string;
+    canRemove: boolean;
+  }>();
   const [departmentItemId, setDepartmentItemId] = useState<string>();
   const [changingDepartment, setChangingDepartment] = useState<Department>();
+  const actionItem = shoppingItems.find((item) => item.id === actionTarget?.itemId);
   const departmentItem = shoppingItems.find((item) => item.id === departmentItemId);
   const completedCount = completedShoppingIds.filter((id) =>
     shoppingItems.some((item) => item.id === id),
   ).length;
+  const completedItemsLabel = `${completedCount} afgevinkte ${completedCount === 1 ? 'product' : 'producten'}`;
+
+  const toggleItem = async (item: ShoppingItem) => {
+    const wasCompleted = completedShoppingIds.includes(item.id);
+    await toggleShoppingItem(item.id);
+    if (!wasCompleted && completedCount + 1 === shoppingItems.length) {
+      mealMateHaptics.listComplete();
+      return;
+    }
+    mealMateHaptics.selection();
+  };
 
   const sections = useMemo(() => {
     const visibleItems = showCompleted
@@ -103,6 +120,22 @@ export default function ShoppingScreen() {
     );
   }, [completedShoppingIds, groupMode, plannedMeals, recipes, shoppingItems, showCompleted, weekDays]);
 
+  const confirmRemove = (item: ShoppingItem) => {
+    setActionTarget(undefined);
+    Alert.alert(
+      'Los product verwijderen?',
+      `${item.name} wordt van de losse boodschappen verwijderd.${item.recipes.length ? ' Het deel voor jullie gerecht blijft staan.' : ''}`,
+      [
+        { text: 'Annuleer', style: 'cancel' },
+        {
+          text: 'Verwijder',
+          style: 'destructive',
+          onPress: () => void removeShoppingItem(item.id),
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <SectionList
@@ -113,7 +146,7 @@ export default function ShoppingScreen() {
           { paddingBottom: getMealMateTabBarContentInset(insets.bottom) },
         ]}
         showsVerticalScrollIndicator={false}
-        stickySectionHeadersEnabled={false}
+        stickySectionHeadersEnabled
         ListHeaderComponent={
           <View>
             <ScreenHeader
@@ -121,16 +154,10 @@ export default function ShoppingScreen() {
               title="Boodschappen"
               subtitle="Per product zie je voor welk gerecht het nodig is. Handig bij vervangen in de winkel."
             />
-            <View style={styles.progressCard}>
-              <View style={styles.progressIcon}>
-                <AppIcon
-                  name={{ ios: 'cart', android: 'shopping_cart', web: 'shopping_cart' }}
-                  tintColor={palette.sageDark}
-                />
-              </View>
-              <View style={styles.progressCopy}>
+            <View style={styles.toolbarCard}>
+              <View style={styles.progressRow}>
                 <Text style={styles.progressTitle}>
-                  {completedCount} van {shoppingItems.length} afgevinkt
+                  {completedCount}/{shoppingItems.length} afgevinkt
                 </Text>
                 <View style={styles.progressTrack}>
                   <View
@@ -143,66 +170,72 @@ export default function ShoppingScreen() {
                   />
                 </View>
               </View>
+              <View style={styles.toolbarRow}>
+                <View style={styles.segmentedControl}>
+                  <GroupButton
+                    label="Afdeling"
+                    selected={groupMode === 'department'}
+                    onPress={() => setGroupMode('department')}
+                  />
+                  <GroupButton
+                    label="Gerecht"
+                    selected={groupMode === 'recipe'}
+                    onPress={() => setGroupMode('recipe')}
+                  />
+                </View>
+                {completedCount > 0 ? (
+                  <Pressable
+                    onPress={() => setShowCompleted((current) => !current)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${completedItemsLabel} ${showCompleted ? 'verbergen' : 'tonen'}`}
+                    style={({ pressed }) => [styles.toolbarAction, pressed && styles.pressed]}>
+                    <AppIcon
+                      name={
+                        showCompleted
+                          ? {
+                              ios: 'eye.slash',
+                              android: 'visibility_off',
+                              web: 'visibility_off',
+                            }
+                          : {
+                              ios: 'eye',
+                              android: 'visibility',
+                              web: 'visibility',
+                            }
+                      }
+                      tintColor={palette.sageDark}
+                      size={16}
+                    />
+                    <Text style={styles.toolbarActionText}>
+                      {showCompleted ? 'Verberg' : 'Toon'} ({completedCount})
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={() => router.push('/add-shopping-item')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Los product toevoegen"
+                  style={({ pressed }) => [
+                    styles.toolbarAction,
+                    styles.addAction,
+                    pressed && styles.pressed,
+                  ]}>
+                  <AppIcon
+                    name={{ ios: 'plus', android: 'add', web: 'add' }}
+                    tintColor={palette.sageDark}
+                    size={16}
+                  />
+                  <Text style={styles.toolbarActionText}>Product</Text>
+                </Pressable>
+              </View>
             </View>
-            <View style={styles.controlsCard}>
-              <Text style={styles.controlsLabel}>Groepeer op</Text>
-              <View style={styles.segmentedControl}>
-                <GroupButton
-                  label="Afdeling"
-                  selected={groupMode === 'department'}
-                  onPress={() => setGroupMode('department')}
-                />
-                <GroupButton
-                  label="Gerecht"
-                  selected={groupMode === 'recipe'}
-                  onPress={() => setGroupMode('recipe')}
-                />
-              </View>
-              <Pressable
-                onPress={() => setShowCompleted((current) => !current)}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: showCompleted }}
-                accessibilityLabel="Afgestreepte producten tonen"
-                style={({ pressed }) => [styles.completedToggle, pressed && styles.pressed]}>
-                <AppIcon
-                  name={
-                    showCompleted
-                      ? { ios: 'eye', android: 'visibility', web: 'visibility' }
-                      : { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' }
-                  }
-                  tintColor={palette.sageDark}
-                  size={19}
-                />
-                <Text style={styles.completedToggleText}>
-                  {showCompleted ? 'Verberg afgestreept' : 'Toon afgestreept'}
-                </Text>
-              </Pressable>
-            </View>
-            <Pressable
-              onPress={() => router.push('/add-shopping-item')}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
-              <View style={styles.addButtonIcon}>
-                <AppIcon
-                  name={{ ios: 'plus', android: 'add', web: 'add' }}
-                  tintColor={palette.sageDark}
-                />
-              </View>
-              <View style={styles.addButtonCopy}>
-                <Text style={styles.addButtonTitle}>Los product toevoegen</Text>
-                <Text style={styles.addButtonText}>Voor alles wat niet bij een gerecht hoort</Text>
-              </View>
-              <AppIcon
-                name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                tintColor={palette.textSoft}
-                size={18}
-              />
-            </Pressable>
           </View>
         }
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              {section.title}
+            </Text>
             <Text style={styles.sectionCount}>{section.data.length}</Text>
           </View>
         )}
@@ -213,25 +246,14 @@ export default function ShoppingScreen() {
             item={listItem.item}
             amount={listItem.amount}
             subtitle={listItem.subtitle}
-            showRemove={listItem.showRemove}
             completed={completedShoppingIds.includes(listItem.item.id)}
-            onToggle={() => toggleShoppingItem(listItem.item.id)}
-            onChangeDepartment={() => setDepartmentItemId(listItem.item.id)}
-            onRemove={() => {
-              const item = listItem.item;
-              Alert.alert(
-                'Los product verwijderen?',
-                `${item.name} wordt van de losse boodschappen verwijderd.${item.recipes.length ? ' Het deel voor jullie gerecht blijft staan.' : ''}`,
-                [
-                  { text: 'Annuleer', style: 'cancel' },
-                  {
-                    text: 'Verwijder',
-                    style: 'destructive',
-                    onPress: () => void removeShoppingItem(item.id),
-                  },
-                ],
-              );
-            }}
+            onToggle={() => void toggleItem(listItem.item)}
+            onOpenActions={() =>
+              setActionTarget({
+                itemId: listItem.item.id,
+                canRemove: listItem.showRemove,
+              })
+            }
           />
         )}
         ListEmptyComponent={
@@ -247,6 +269,77 @@ export default function ShoppingScreen() {
           </View>
         }
       />
+      <Modal
+        visible={Boolean(actionItem)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionTarget(undefined)}>
+        <View style={styles.modalOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Productacties sluiten"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setActionTarget(undefined)}
+          />
+          <SafeAreaView style={styles.modalSheet} edges={['bottom']}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalEyebrow}>PRODUCT</Text>
+            <Text style={styles.modalTitle}>{actionItem?.name}</Text>
+            <View style={styles.actionOptions}>
+              <Pressable
+                onPress={() => {
+                  if (!actionItem) return;
+                  setActionTarget(undefined);
+                  setDepartmentItemId(actionItem.id);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Afdeling wijzigen van ${actionItem?.name ?? 'product'}`}
+                style={({ pressed }) => [styles.actionOption, pressed && styles.pressed]}>
+                <View style={styles.actionIcon}>
+                  <AppIcon
+                    name={{
+                      ios: 'square.grid.2x2',
+                      android: 'grid_view',
+                      web: 'grid_view',
+                    }}
+                    tintColor={palette.sageDark}
+                    size={19}
+                  />
+                </View>
+                <View style={styles.actionCopy}>
+                  <Text style={styles.actionTitle}>Afdeling wijzigen</Text>
+                  <Text style={styles.actionSubtitle}>{actionItem?.department}</Text>
+                </View>
+                <AppIcon
+                  name={{
+                    ios: 'chevron.right',
+                    android: 'chevron_right',
+                    web: 'chevron_right',
+                  }}
+                  tintColor={palette.textSoft}
+                  size={18}
+                />
+              </Pressable>
+              {actionItem && actionTarget?.canRemove ? (
+                <Pressable
+                  onPress={() => confirmRemove(actionItem)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${actionItem.name} van losse boodschappen verwijderen`}
+                  style={({ pressed }) => [styles.actionOption, pressed && styles.pressed]}>
+                  <View style={[styles.actionIcon, styles.dangerActionIcon]}>
+                    <AppIcon
+                      name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                      tintColor={palette.danger}
+                      size={19}
+                    />
+                  </View>
+                  <Text style={[styles.actionTitle, styles.dangerActionTitle]}>Verwijderen</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
       <Modal
         visible={Boolean(departmentItem)}
         transparent
@@ -283,8 +376,10 @@ export default function ShoppingScreen() {
                       setChangingDepartment(department);
                       try {
                         await updateShoppingItemDepartment(departmentItem.id, department);
+                        mealMateHaptics.selection();
                         setDepartmentItemId(undefined);
                       } catch {
+                        mealMateHaptics.error();
                         Alert.alert(
                           'Afdeling wijzigen mislukt',
                           'Controleer je internetverbinding en probeer het opnieuw.',
@@ -354,20 +449,16 @@ function ShoppingRow({
   item,
   amount,
   subtitle,
-  showRemove,
   completed,
   onToggle,
-  onChangeDepartment,
-  onRemove,
+  onOpenActions,
 }: {
   item: ShoppingItem;
   amount: number;
   subtitle?: string;
-  showRemove: boolean;
   completed: boolean;
   onToggle: () => void;
-  onChangeDepartment: () => void;
-  onRemove: () => void;
+  onOpenActions: () => void;
 }) {
   const formattedAmount = Number.isInteger(amount) ? amount : amount.toFixed(1);
 
@@ -400,34 +491,18 @@ function ShoppingRow({
           {formattedAmount} {item.unit}
         </Text>
       </Pressable>
-      <View style={styles.rowActions}>
-        <Pressable
-          onPress={onChangeDepartment}
-          accessibilityRole="button"
-          accessibilityLabel={`Wijzig afdeling van ${item.name}`}
-          hitSlop={6}
-          style={({ pressed }) => [styles.rowActionButton, pressed && styles.pressed]}>
-          <AppIcon
-            name={{ ios: 'arrow.left.arrow.right', android: 'swap_horiz', web: 'swap_horiz' }}
-            tintColor={palette.textSoft}
-            size={18}
-          />
-        </Pressable>
-        {showRemove ? (
-          <Pressable
-            onPress={onRemove}
-            accessibilityRole="button"
-            accessibilityLabel={`Verwijder ${item.name} van losse boodschappen`}
-            hitSlop={8}
-            style={({ pressed }) => [styles.rowActionButton, pressed && styles.pressed]}>
-            <AppIcon
-              name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-              tintColor={palette.textSoft}
-              size={18}
-            />
-          </Pressable>
-        ) : null}
-      </View>
+      <Pressable
+        onPress={onOpenActions}
+        accessibilityRole="button"
+        accessibilityLabel={`Meer acties voor ${item.name}`}
+        hitSlop={6}
+        style={({ pressed }) => [styles.rowActionButton, pressed && styles.pressed]}>
+        <AppIcon
+          name={{ ios: 'ellipsis', android: 'more_horiz', web: 'more_horiz' }}
+          tintColor={palette.textSoft}
+          size={20}
+        />
+      </Pressable>
     </View>
   );
 }
@@ -435,100 +510,77 @@ function ShoppingRow({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   content: { padding: spacing.xl },
-  progressCard: {
-    ...shadow.card,
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.lg,
-    flexDirection: 'row',
-    marginTop: spacing.xl,
-    padding: spacing.md,
-  },
-  progressIcon: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    borderRadius: radius.md,
-    height: 40,
-    justifyContent: 'center',
-    width: 40,
-  },
-  progressCopy: { flex: 1, marginLeft: spacing.md },
-  progressTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
-  progressTrack: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    borderRadius: radius.pill,
-    height: 6,
-    marginTop: spacing.md,
-    overflow: 'hidden',
-  },
-  progressFill: { backgroundColor: palette.sageDark, borderRadius: radius.pill, height: 6 },
-  controlsCard: {
+  toolbarCard: {
     backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radius.lg,
     borderWidth: 1,
-    marginTop: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.xl,
     padding: spacing.md,
   },
-  controlsLabel: {
-    color: palette.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
+  progressRow: { alignItems: 'center', flexDirection: 'row' },
+  progressTitle: { color: palette.text, fontSize: 13, fontWeight: '700' },
+  progressTrack: {
+    backgroundColor: palette.surfaceStrong,
+    borderRadius: radius.pill,
+    flex: 1,
+    height: 6,
+    marginLeft: spacing.md,
+    overflow: 'hidden',
   },
+  progressFill: {
+    backgroundColor: palette.sageDark,
+    borderRadius: radius.pill,
+    height: 6,
+  },
+  toolbarRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   segmentedControl: {
     backgroundColor: palette.surfaceMuted,
     borderRadius: radius.md,
     flexDirection: 'row',
+    flex: 1,
     padding: spacing.xs,
   },
   groupButton: {
     alignItems: 'center',
     borderRadius: radius.sm,
     flex: 1,
+    minHeight: 36,
     paddingVertical: spacing.sm,
   },
   groupButtonSelected: { backgroundColor: palette.surface },
-  groupButtonText: { color: palette.textMuted, fontSize: 13, fontWeight: '600' },
+  groupButtonText: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   groupButtonTextSelected: { color: palette.sageDark, fontWeight: '800' },
-  completedToggle: {
+  toolbarAction: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    backgroundColor: palette.surfaceMuted,
+    borderRadius: radius.sm,
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    minHeight: 36,
-    paddingHorizontal: spacing.xs,
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: 8,
   },
-  completedToggleText: { color: palette.sageDark, fontSize: 13, fontWeight: '700' },
-  addButton: {
-    alignItems: 'center',
-    borderColor: palette.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    flexDirection: 'row',
-    marginTop: spacing.md,
-    padding: spacing.md,
+  addAction: { backgroundColor: palette.sageSoft },
+  toolbarActionText: {
+    color: palette.sageDark,
+    fontSize: 11,
+    fontWeight: '700',
   },
-  addButtonIcon: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.md,
-    height: 44,
-    justifyContent: 'center',
-    width: 44,
-  },
-  addButtonCopy: { flex: 1, marginHorizontal: spacing.md },
-  addButtonTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
-  addButtonText: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
   sectionHeader: {
     alignItems: 'center',
+    backgroundColor: palette.background,
+    borderBottomColor: palette.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.md,
-    marginTop: spacing.xl,
+    minHeight: 50,
+    paddingVertical: spacing.md,
+    zIndex: 1,
   },
   sectionTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   sectionCount: { color: palette.textSoft, fontSize: 13, fontWeight: '600' },
@@ -547,12 +599,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: 10,
   },
-  rowActions: { alignItems: 'center', flexDirection: 'row' },
   rowActionButton: {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
-    paddingHorizontal: spacing.md,
+    minWidth: 48,
   },
   pressed: { opacity: 0.7 },
   checkbox: {
@@ -564,12 +615,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 24,
   },
-  checkboxChecked: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
+  checkboxChecked: {
+    backgroundColor: palette.sageDark,
+    borderColor: palette.sageDark,
+  },
   itemCopy: { flex: 1, marginHorizontal: spacing.md },
   itemName: { color: palette.text, fontSize: 15, fontWeight: '600' },
-  itemSource: { color: palette.sage, fontSize: 11, lineHeight: 15, marginTop: 5 },
+  itemSource: {
+    color: palette.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 5,
+  },
   itemAmount: { color: palette.textMuted, fontSize: 13, fontWeight: '600' },
-  completedText: { color: palette.textSoft, textDecorationLine: 'line-through' },
+  completedText: {
+    color: palette.textSoft,
+    textDecorationLine: 'line-through',
+  },
   emptyState: { alignItems: 'center', paddingVertical: 70 },
   emptyTitle: { color: palette.text, fontSize: 17, fontWeight: '700' },
   emptyText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
@@ -594,9 +656,52 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     width: 44,
   },
-  modalEyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  modalTitle: { color: palette.text, fontSize: 24, fontWeight: '700', marginTop: spacing.sm },
+  modalEyebrow: {
+    color: palette.sage,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  modalTitle: {
+    color: palette.text,
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: spacing.sm,
+  },
   modalText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },
+  actionOptions: {
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  actionOption: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 60,
+    paddingHorizontal: spacing.lg,
+  },
+  actionIcon: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.sm,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  actionCopy: { flex: 1, marginLeft: spacing.md },
+  actionTitle: {
+    color: palette.text,
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  actionSubtitle: { color: palette.textMuted, fontSize: 12, marginTop: 2 },
+  dangerActionIcon: { backgroundColor: '#F4E5E3' },
+  dangerActionTitle: { color: palette.danger, marginLeft: spacing.md },
   departmentScroll: { marginTop: spacing.lg },
   departmentOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
   departmentOption: {
@@ -609,7 +714,10 @@ const styles = StyleSheet.create({
     minHeight: 54,
     paddingHorizontal: spacing.lg,
   },
-  departmentOptionSelected: { backgroundColor: palette.sageSoft, borderColor: palette.sage },
+  departmentOptionSelected: {
+    backgroundColor: palette.sageSoft,
+    borderColor: palette.sage,
+  },
   departmentRadio: {
     alignItems: 'center',
     borderColor: palette.border,
@@ -626,6 +734,11 @@ const styles = StyleSheet.create({
     height: 10,
     width: 10,
   },
-  departmentOptionText: { color: palette.text, flex: 1, fontSize: 14, marginLeft: spacing.md },
+  departmentOptionText: {
+    color: palette.text,
+    flex: 1,
+    fontSize: 14,
+    marginLeft: spacing.md,
+  },
   departmentOptionTextSelected: { color: palette.sageDark, fontWeight: '700' },
 });

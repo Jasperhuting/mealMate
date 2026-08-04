@@ -16,3 +16,6 @@ otp_length = 8
 
 [functions.parse-recipe]
 verify_jwt = true
+
+[functions.invite-family-member]
+verify_jwt = false

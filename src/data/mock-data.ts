@@ -56,6 +56,7 @@ export type Recipe = {
   minutes: number;
   image: ImageSource | null;
   ingredients: Ingredient[];
+  sourceUrl?: string;
 };
 
 export type WeekDay = {
@@ -73,6 +74,9 @@ export type FamilyMember = {
   name: string;
   initials: string;
   color: string;
+  email?: string;
+  invitationStatus?: 'pending' | 'accepted';
+  linkedUserId?: string;
 };
 
 const ingredient = (
