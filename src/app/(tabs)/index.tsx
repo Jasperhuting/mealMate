@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { dateToIso, getWeekRangeLabel, type WeekDay } from '@/data/mock-data';
@@ -11,6 +12,7 @@ import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function WeekScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { weekDays, plannedMeals, getRecipe, removeMeal, changeWeek } = useMealMate();
   const [selectedDayId, setSelectedDayId] = useState(() => {
     const currentDayId = dateToIso(new Date());
@@ -84,7 +86,10 @@ export default function WeekScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: getMealMateTabBarContentInset(insets.bottom) },
+        ]}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic">
         <View style={styles.brandRow}>
@@ -353,7 +358,7 @@ function WeekButton({
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
-  content: { paddingBottom: 120, paddingHorizontal: spacing.xl },
+  content: { paddingHorizontal: spacing.xl },
   brandRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -382,7 +387,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   weekButton: {
     alignItems: 'center',
@@ -400,14 +405,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     flexDirection: 'row',
     gap: 3,
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
     padding: spacing.xs,
   },
   dayButton: {
     alignItems: 'center',
     borderRadius: radius.md,
     flex: 1,
-    minHeight: 105,
+    minHeight: 88,
     paddingHorizontal: 2,
     paddingVertical: spacing.sm,
   },
@@ -418,10 +423,10 @@ const styles = StyleSheet.create({
   dayDateBadge: {
     alignItems: 'center',
     borderRadius: radius.pill,
-    height: 30,
+    height: 28,
     justifyContent: 'center',
     marginTop: 1,
-    width: 30,
+    width: 28,
   },
   dayDateBadgeToday: {
     backgroundColor: palette.sageSoft,
@@ -432,21 +437,21 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
     borderColor: palette.white,
   },
-  dayDate: { color: palette.text, fontSize: 20, fontWeight: '700' },
+  dayDate: { color: palette.text, fontSize: 18, fontWeight: '700' },
   dayDateTodaySelectedText: { color: palette.sageDark },
   dayTextSelected: { color: palette.white },
   dayStatus: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.pill,
-    height: 30,
+    height: 26,
     justifyContent: 'center',
-    marginTop: spacing.sm,
+    marginTop: 6,
     overflow: 'hidden',
-    width: 30,
+    width: 26,
   },
   dayStatusSelected: { backgroundColor: palette.white },
-  dayThumbnail: { height: 30, width: 30 },
+  dayThumbnail: { height: 26, width: 26 },
   plannedDot: { backgroundColor: palette.sage, borderRadius: radius.pill, height: 10, width: 10 },
   plannedDotSelected: { backgroundColor: palette.sageDark },
   selectedDate: {
@@ -454,7 +459,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     letterSpacing: -0.4,
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   selectedMealCard: {
     ...shadow.card,
@@ -462,11 +467,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderRadius: radius.lg,
     flexDirection: 'row',
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     padding: spacing.sm,
   },
-  selectedMealImage: { borderRadius: radius.md, height: 118, width: 118 },
-  selectedMealCopy: { flex: 1, marginLeft: spacing.lg, paddingRight: spacing.sm },
+  selectedMealImage: { borderRadius: radius.md, height: 92, width: 92 },
+  selectedMealCopy: { flex: 1, marginLeft: spacing.md, paddingRight: spacing.sm },
   selectedMealTitle: { color: palette.text, fontSize: 17, fontWeight: '700', lineHeight: 21 },
   selectedMealMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
   selectedMealActions: {
@@ -518,24 +523,24 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   listTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   listMeta: { color: palette.textSoft, fontSize: 12, fontWeight: '600' },
   weekList: { marginTop: spacing.md },
-  weekRow: { alignItems: 'center', flexDirection: 'row', minHeight: 74, paddingVertical: spacing.sm },
+  weekRow: { alignItems: 'center', flexDirection: 'row', minHeight: 64, paddingVertical: 6 },
   weekRowDivider: { borderBottomColor: palette.border, borderBottomWidth: 1 },
   weekRowDate: { width: 80 },
   weekRowDay: { color: palette.text, fontSize: 13, fontWeight: '600' },
   weekRowDateText: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
-  weekRowImage: { borderRadius: radius.pill, height: 42, width: 42 },
+  weekRowImage: { borderRadius: radius.pill, height: 38, width: 38 },
   weekRowPlus: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.pill,
-    height: 42,
+    height: 38,
     justifyContent: 'center',
-    width: 42,
+    width: 38,
   },
   weekRowCopy: { flex: 1, marginHorizontal: spacing.md },
   weekRowTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },

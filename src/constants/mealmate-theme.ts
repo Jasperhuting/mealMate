@@ -1,18 +1,18 @@
 export const palette = {
-  background: '#F3F4F1',
+  background: '#FAFAF9',
   surface: '#FFFFFF',
-  surfaceMuted: '#E9EBE6',
-  surfaceStrong: '#DDE1D9',
-  border: '#D7DAD3',
-  text: '#20231F',
-  textMuted: '#73786F',
-  textSoft: '#989D95',
-  sage: '#66745D',
-  sageDark: '#4C5946',
-  sageSoft: '#DDE4D8',
+  surfaceMuted: '#F3F3F2',
+  surfaceStrong: '#E7E7E5',
+  border: '#DEDEDB',
+  text: '#20201F',
+  textMuted: '#686865',
+  textSoft: '#969691',
+  sage: '#EA580C',
+  sageDark: '#C2410C',
+  sageSoft: '#FFF0E6',
   white: '#FFFFFF',
-  danger: '#A85F58',
-  star: '#B99248',
+  danger: '#B42318',
+  star: '#F59E0B',
 } as const;
 
 export const spacing = {
@@ -34,7 +34,7 @@ export const radius = {
 
 export const shadow = {
   card: {
-    shadowColor: '#252820',
+    shadowColor: '#20201F',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.06,
     shadowRadius: 14,

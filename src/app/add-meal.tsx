@@ -4,6 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
@@ -44,6 +45,12 @@ export default function AddMealScreen() {
   if (selectedRecipe) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        <ModalScreenHeader
+          title="Gerecht plannen"
+          closeLabel="Sluit gerecht plannen"
+          onBack={() => setSelectedRecipeId(undefined)}
+          backLabel="Terug naar gerecht kiezen"
+        />
         <FlatList
           data={selectedRecipe.ingredients}
           keyExtractor={(item) => item.id}
@@ -107,6 +114,7 @@ export default function AddMealScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <ModalScreenHeader title="Gerecht plannen" closeLabel="Sluit gerecht plannen" />
       <FlatList
         data={recipes}
         keyExtractor={(item) => item.id}
@@ -218,14 +226,14 @@ function IngredientRow({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   content: { padding: spacing.xl, paddingBottom: spacing.xxl },
-  stepRow: { alignItems: 'center', flexDirection: 'row', marginBottom: spacing.xxl },
+  stepRow: { alignItems: 'center', flexDirection: 'row', marginBottom: spacing.xl },
   stepActive: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   stepInactive: { color: palette.textSoft, fontSize: 12, fontWeight: '600' },
   stepLine: { backgroundColor: palette.border, flex: 1, height: 1, marginHorizontal: spacing.md },
   stepLineActive: { backgroundColor: palette.sage, flex: 1, height: 1, marginHorizontal: spacing.md },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
-  title: { color: palette.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.7, marginTop: spacing.sm },
-  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 21, marginTop: spacing.sm },
+  title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
+  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
   newRecipeButton: {
     alignItems: 'center',
     borderColor: palette.sage,
@@ -233,7 +241,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderWidth: 1,
     flexDirection: 'row',
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
     padding: spacing.md,
   },
   newRecipeIcon: {
@@ -247,8 +255,8 @@ const styles = StyleSheet.create({
   newRecipeCopy: { flex: 1, marginHorizontal: spacing.md },
   newRecipeTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
   newRecipeMeta: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
-  listTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginBottom: spacing.md, marginTop: spacing.xxl },
-  cardSeparator: { height: spacing.md },
+  listTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginBottom: spacing.md, marginTop: spacing.xl },
+  cardSeparator: { height: 10 },
   recipeRow: {
     alignItems: 'center',
     backgroundColor: palette.surface,
@@ -260,7 +268,7 @@ const styles = StyleSheet.create({
   },
   currentRecipeRow: { borderColor: palette.sage },
   pressed: { opacity: 0.7 },
-  recipeImage: { borderRadius: radius.md, height: 76, width: 76 },
+  recipeImage: { borderRadius: radius.md, height: 68, width: 68 },
   recipeCopy: { flex: 1, marginHorizontal: spacing.md },
   recipeTitle: { color: palette.text, fontSize: 15, fontWeight: '700' },
   recipeMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
@@ -270,7 +278,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.sageSoft,
     borderRadius: radius.lg,
     flexDirection: 'row',
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
     padding: spacing.sm,
   },
   selectedImage: { borderRadius: radius.md, height: 64, width: 64 },
@@ -283,7 +291,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.surface,
     flexDirection: 'row',
-    minHeight: 70,
+    minHeight: 62,
     paddingHorizontal: spacing.lg,
   },
   separator: { backgroundColor: palette.border, height: 1, marginLeft: 55 },
@@ -308,7 +316,7 @@ const styles = StyleSheet.create({
     borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: 'row',
-    padding: spacing.lg,
+    padding: spacing.md,
   },
   bottomCopy: { flex: 1 },
   bottomCount: { color: palette.text, fontSize: 14, fontWeight: '700' },

@@ -37,18 +37,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1.2,
-    marginBottom: spacing.sm,
+    marginBottom: 6,
   },
   title: {
     color: palette.text,
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '700',
     letterSpacing: -0.8,
   },
   subtitle: {
     color: palette.textMuted,
     fontSize: 15,
-    lineHeight: 21,
-    marginTop: spacing.sm,
+    lineHeight: 20,
+    marginTop: 6,
   },
 });

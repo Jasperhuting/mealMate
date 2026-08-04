@@ -11,9 +11,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import { jumboDepartments, type Department } from '@/data/mock-data';
@@ -33,6 +34,7 @@ type ShoppingListItem = {
 
 export default function ShoppingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const {
     shoppingItems,
     completedShoppingIds,
@@ -106,7 +108,10 @@ export default function ShoppingScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.key}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: getMealMateTabBarContentInset(insets.bottom) },
+        ]}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
@@ -429,23 +434,23 @@ function ShoppingRow({
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
-  content: { padding: spacing.xl, paddingBottom: 120 },
+  content: { padding: spacing.xl },
   progressCard: {
     ...shadow.card,
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.lg,
     flexDirection: 'row',
-    marginTop: spacing.xxl,
-    padding: spacing.lg,
+    marginTop: spacing.xl,
+    padding: spacing.md,
   },
   progressIcon: {
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.6)',
     borderRadius: radius.md,
-    height: 46,
+    height: 40,
     justifyContent: 'center',
-    width: 46,
+    width: 40,
   },
   progressCopy: { flex: 1, marginLeft: spacing.md },
   progressTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
@@ -523,7 +528,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginBottom: spacing.md,
-    marginTop: spacing.xxl,
+    marginTop: spacing.xl,
   },
   sectionTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   sectionCount: { color: palette.textSoft, fontSize: 13, fontWeight: '600' },
@@ -533,14 +538,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: palette.surface,
     flexDirection: 'row',
-    minHeight: 76,
+    minHeight: 66,
   },
   itemMain: {
     alignItems: 'center',
     flex: 1,
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: 10,
   },
   rowActions: { alignItems: 'center', flexDirection: 'row' },
   rowActionButton: {

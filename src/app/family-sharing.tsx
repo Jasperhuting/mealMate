@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import {
   createHouseholdInvite,
@@ -77,6 +78,7 @@ export default function FamilySharingScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <ModalScreenHeader title="Gezin delen" closeLabel="Sluit gezin delen" />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -188,33 +190,33 @@ export default function FamilySharingScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   keyboardView: { flex: 1 },
-  content: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  content: { padding: spacing.xl, paddingBottom: spacing.xxl },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
-  title: { color: palette.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.7, marginTop: spacing.sm },
-  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 21, marginTop: spacing.sm },
+  title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
+  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
   card: {
     ...shadow.card,
     backgroundColor: palette.surface,
     borderRadius: radius.lg,
-    marginTop: spacing.xxl,
-    padding: spacing.xl,
+    marginTop: spacing.xl,
+    padding: spacing.lg,
   },
   cardIcon: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.md,
-    height: 48,
+    height: 44,
     justifyContent: 'center',
-    width: 48,
+    width: 44,
   },
-  cardTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginTop: spacing.lg },
+  cardTitle: { color: palette.text, fontSize: 19, fontWeight: '700', marginTop: spacing.md },
   cardText: { color: palette.textMuted, fontSize: 14, lineHeight: 20, marginTop: spacing.sm },
   codeCard: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.md,
-    marginTop: spacing.lg,
-    padding: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
   },
   codeLabel: { color: palette.sage, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   code: { color: palette.text, fontSize: 28, fontWeight: '800', letterSpacing: 2, marginTop: spacing.sm },
@@ -230,7 +232,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   primaryText: { color: palette.white, fontSize: 15, fontWeight: '700' },
-  dividerRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginTop: spacing.xxl },
+  dividerRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, marginTop: spacing.xl },
   divider: { backgroundColor: palette.border, flex: 1, height: 1 },
   dividerText: { color: palette.textSoft, fontSize: 10, fontWeight: '800' },
   codeInput: {
@@ -242,7 +244,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     letterSpacing: 2,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     minHeight: 56,
     paddingHorizontal: spacing.lg,
     textAlign: 'center',

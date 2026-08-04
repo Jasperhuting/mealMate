@@ -49,7 +49,7 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Gerecht toevoegen',
-              headerBackTitle: 'Annuleer',
+              headerBackVisible: false,
             }}
           />
           <Stack.Screen
@@ -57,7 +57,7 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Gerecht plannen',
-              headerBackTitle: 'Terug',
+              headerBackVisible: false,
             }}
           />
           <Stack.Screen
@@ -65,7 +65,7 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Product toevoegen',
-              headerBackTitle: 'Annuleer',
+              headerBackVisible: false,
             }}
           />
           <Stack.Screen
@@ -73,7 +73,7 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Gerecht beoordelen',
-              headerBackTitle: 'Terug',
+              headerBackVisible: false,
             }}
           />
           <Stack.Screen
@@ -81,7 +81,7 @@ function AuthenticatedApp() {
             options={{
               presentation: 'modal',
               title: 'Gezin delen',
-              headerBackTitle: 'Sluiten',
+              headerBackVisible: false,
             }}
           />
         </Stack>

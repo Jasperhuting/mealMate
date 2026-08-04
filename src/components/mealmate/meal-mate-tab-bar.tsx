@@ -11,7 +11,18 @@ type MealMateTabBarProps = TabBarProps & {
   blurTarget: RefObject<View | null>;
 };
 
-const BAR_INSET = 8;
+const BAR_INSET = 6;
+const BAR_TOP_GAP = 8;
+const MIN_BOTTOM_INSET = 10;
+const CONTENT_CLEARANCE = 16;
+
+export const MEAL_MATE_TAB_BAR_HEIGHT = 64;
+
+export const getMealMateTabBarContentInset = (bottomInset: number) =>
+  MEAL_MATE_TAB_BAR_HEIGHT +
+  BAR_TOP_GAP +
+  Math.max(bottomInset, MIN_BOTTOM_INSET) +
+  CONTENT_CLEARANCE;
 
 export function MealMateTabBar({
   state,
@@ -21,7 +32,9 @@ export function MealMateTabBar({
   blurTarget,
 }: MealMateTabBarProps) {
   return (
-    <View pointerEvents="box-none" style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.container, { paddingBottom: Math.max(insets.bottom, MIN_BOTTOM_INSET) }]}>
       <View style={styles.shadow}>
         <View style={styles.glassBar}>
           <BlurView
@@ -102,23 +115,23 @@ const styles = StyleSheet.create({
   container: {
     bottom: 0,
     left: 0,
-    paddingTop: 10,
+    paddingTop: BAR_TOP_GAP,
     position: 'absolute',
     right: 0,
   },
   shadow: {
-    borderRadius: 36,
+    borderRadius: 32,
     elevation: 8,
-    height: 72,
-    marginHorizontal: 16,
-    shadowColor: '#252820',
+    height: MEAL_MATE_TAB_BAR_HEIGHT,
+    marginHorizontal: 12,
+    shadowColor: '#20201F',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 18,
   },
   glassBar: {
     borderColor: 'rgba(255, 255, 255, 0.72)',
-    borderRadius: 36,
+    borderRadius: 32,
     borderWidth: 1,
     flex: 1,
     overflow: 'hidden',
@@ -134,15 +147,15 @@ const styles = StyleSheet.create({
   },
   item: {
     alignItems: 'center',
-    borderRadius: 18,
+    borderRadius: 16,
     flex: 1,
     gap: 3,
     justifyContent: 'center',
     minWidth: 0,
-    paddingBottom: 4,
+    paddingBottom: 2,
   },
   itemActive: {
-    backgroundColor: 'rgba(221, 228, 216, 0.82)',
+    backgroundColor: 'rgba(255, 240, 230, 0.88)',
   },
   itemPressed: {
     opacity: 0.7,

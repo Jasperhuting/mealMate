@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
+import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
 import { parseIngredientLines } from '@/lib/ingredient-parser';
@@ -251,7 +252,7 @@ export default function AddRecipeScreen() {
   if (isEditing && !editingRecipe) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Stack.Screen options={{ title: 'Gerecht aanpassen' }} />
+        <ModalScreenHeader title="Gerecht aanpassen" closeLabel="Sluit gerecht aanpassen" />
         <Text style={styles.notFound}>Dit gerecht kon niet worden gevonden.</Text>
       </SafeAreaView>
     );
@@ -259,11 +260,9 @@ export default function AddRecipeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen
-        options={{
-          title: isEditing ? 'Gerecht aanpassen' : 'Gerecht toevoegen',
-          headerBackTitle: 'Annuleer',
-        }}
+      <ModalScreenHeader
+        title={isEditing ? 'Gerecht aanpassen' : 'Gerecht toevoegen'}
+        closeLabel={isEditing ? 'Sluit gerecht aanpassen' : 'Sluit gerecht toevoegen'}
       />
       <KeyboardAvoidingView
         style={styles.keyboardView}
@@ -625,16 +624,16 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   content: { padding: spacing.xl, paddingBottom: spacing.xl },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
-  title: { color: palette.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.7, marginTop: spacing.sm },
-  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 22, marginTop: spacing.sm },
-  modeSwitch: { backgroundColor: palette.surfaceStrong, borderRadius: radius.pill, flexDirection: 'row', marginTop: spacing.xxl, padding: 4 },
+  title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
+  subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
+  modeSwitch: { backgroundColor: palette.surfaceStrong, borderRadius: radius.pill, flexDirection: 'row', marginTop: spacing.xl, padding: 4 },
   modeButton: { alignItems: 'center', borderRadius: radius.pill, flex: 1, paddingVertical: 11 },
   modeButtonSelected: { backgroundColor: palette.surface },
   modeLabel: { color: palette.textMuted, fontSize: 13, fontWeight: '700' },
   modeLabelSelected: { color: palette.sageDark },
   aiPanel: { marginTop: spacing.xl },
-  aiIntroCard: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.lg, flexDirection: 'row', padding: spacing.lg },
-  sparkleIcon: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: radius.md, height: 46, justifyContent: 'center', width: 46 },
+  aiIntroCard: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.lg, flexDirection: 'row', padding: spacing.md },
+  sparkleIcon: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: radius.md, height: 42, justifyContent: 'center', width: 42 },
   aiIntroCopy: { flex: 1, marginLeft: spacing.md },
   aiIntroTitle: { color: palette.text, fontSize: 15, fontWeight: '800' },
   aiIntroText: { color: palette.textMuted, fontSize: 12, lineHeight: 17, marginTop: 4 },
@@ -642,10 +641,10 @@ const styles = StyleSheet.create({
   setupTitle: { color: palette.text, fontSize: 13, fontWeight: '700' },
   setupText: { color: palette.textMuted, fontSize: 11, lineHeight: 16, marginTop: 4 },
   formSection: { gap: spacing.sm, marginTop: spacing.xl },
-  label: { color: palette.text, fontSize: 13, fontWeight: '700', marginTop: spacing.lg },
+  label: { color: palette.text, fontSize: 13, fontWeight: '700', marginTop: spacing.md },
   input: { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: radius.md, borderWidth: 1, color: palette.text, fontSize: 16, minHeight: 52, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  sourceInput: { minHeight: 126 },
-  descriptionInput: { minHeight: 88 },
+  sourceInput: { minHeight: 104 },
+  descriptionInput: { minHeight: 76 },
   timeRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
   timeInput: { textAlign: 'center', width: 88 },
   timeUnit: { color: palette.textMuted, fontSize: 14 },
@@ -655,29 +654,29 @@ const styles = StyleSheet.create({
   photoButton: { alignItems: 'center', backgroundColor: palette.surface, borderColor: palette.border, borderRadius: radius.md, borderWidth: 1, flex: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', minHeight: 54, paddingHorizontal: spacing.sm },
   photoButtonText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   imagePreviewCard: { backgroundColor: palette.surface, borderRadius: radius.lg, marginTop: spacing.md, overflow: 'hidden' },
-  imagePreview: { height: 190, width: '100%' },
+  imagePreview: { height: 160, width: '100%' },
   imageActions: { flexDirection: 'row', justifyContent: 'flex-end', padding: spacing.sm },
   smallAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   smallActionText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   removeText: { color: palette.danger, fontSize: 12, fontWeight: '700' },
-  aiButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', marginTop: spacing.xxl, minHeight: 54, paddingHorizontal: spacing.xl },
+  aiButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', marginTop: spacing.xl, minHeight: 54, paddingHorizontal: spacing.xl },
   aiButtonText: { color: palette.white, fontSize: 14, fontWeight: '700' },
   disabledButton: { opacity: 0.65 },
-  aiSuccessCard: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.lg, flexDirection: 'row', marginTop: spacing.xl, padding: spacing.lg },
+  aiSuccessCard: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.lg, flexDirection: 'row', marginTop: spacing.xl, padding: spacing.md },
   aiSuccessCopy: { flex: 1, marginLeft: spacing.md },
   aiSuccessTitle: { color: palette.text, fontSize: 14, fontWeight: '800' },
   aiSuccessText: { color: palette.textMuted, fontSize: 11, lineHeight: 16, marginTop: 4 },
-  ingredientsHeading: { marginBottom: spacing.md, marginTop: spacing.xxl },
+  ingredientsHeading: { marginBottom: spacing.md, marginTop: spacing.xl },
   ingredientsTitleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
-  sectionTitle: { color: palette.text, fontSize: 20, fontWeight: '700' },
+  sectionTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   countPill: { backgroundColor: palette.sageSoft, borderRadius: radius.pill, color: palette.sageDark, fontSize: 12, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 3 },
   hint: { color: palette.textMuted, fontSize: 12, lineHeight: 18, marginTop: spacing.sm },
-  ingredientsInput: { minHeight: 160 },
-  previewCard: { backgroundColor: palette.sageSoft, borderRadius: radius.lg, marginTop: spacing.lg, padding: spacing.lg },
+  ingredientsInput: { minHeight: 136 },
+  previewCard: { backgroundColor: palette.sageSoft, borderRadius: radius.lg, marginTop: spacing.md, padding: spacing.md },
   previewHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   previewTitle: { color: palette.sageDark, fontSize: 13, fontWeight: '800' },
-  previewRow: { alignItems: 'center', flexDirection: 'row', minHeight: 54 },
-  previewDivider: { borderTopColor: 'rgba(76,89,70,0.15)', borderTopWidth: 1 },
+  previewRow: { alignItems: 'center', flexDirection: 'row', minHeight: 48 },
+  previewDivider: { borderTopColor: 'rgba(194,65,12,0.14)', borderTopWidth: 1 },
   previewCopy: { flex: 1 },
   ingredientName: { color: palette.text, fontSize: 14, fontWeight: '600' },
   department: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
