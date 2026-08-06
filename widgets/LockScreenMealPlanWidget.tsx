@@ -8,10 +8,12 @@ import {
   font,
   foregroundStyle,
   frame,
+  layoutPriority,
   lineLimit,
   minimumScaleFactor,
   padding,
   resizable,
+  truncationMode,
 } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 
@@ -31,6 +33,7 @@ const LockScreenMealPlanWidget = (
         containerBackground('#00000000', 'widget'),
         frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'leading' }),
         padding({ horizontal: 3, vertical: 2 }),
+        clipped(),
       ]}>
       {props.primaryImageUri && props.primaryTitle.length <= 38 && (
         <Image
@@ -44,11 +47,21 @@ const LockScreenMealPlanWidget = (
           ]}
         />
       )}
-      <VStack alignment="leading" spacing={1}>
+      <VStack
+        alignment="leading"
+        spacing={1}
+        modifiers={[
+          frame({ minWidth: 0, maxWidth: Infinity, alignment: 'leading' }),
+          layoutPriority(1),
+          clipped(),
+        ]}>
         <Text
           modifiers={[
             font({ size: 9, weight: 'semibold', design: 'rounded' }),
             foregroundStyle({ type: 'hierarchical', style: 'secondary' }),
+            frame({ maxWidth: Infinity, alignment: 'leading' }),
+            lineLimit(1),
+            truncationMode('tail'),
           ]}>
           🍽 TABLY · {props.primaryLabel.toUpperCase()}
         </Text>
@@ -56,9 +69,11 @@ const LockScreenMealPlanWidget = (
           modifiers={[
             font({ size: 13, weight: 'bold', design: 'rounded' }),
             foregroundStyle({ type: 'hierarchical', style: 'primary' }),
-            lineLimit(),
+            frame({ maxWidth: Infinity, alignment: 'leading' }),
+            lineLimit(1),
             minimumScaleFactor(0.5),
             allowsTightening(true),
+            truncationMode('tail'),
           ]}>
           {props.primaryTitle}
         </Text>

@@ -9,7 +9,7 @@
     "scheme": "mealmate",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/tably.icon",
+      "icon": "./assets/images/tably-icon.png",
       "usesAppleSignIn": true,
       "bundleIdentifier": "nl.mealmate.app",
       "supportsTablet": false,
@@ -19,7 +19,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#195C44",
+        "backgroundColor": "#16805C",
         "foregroundImage": "./assets/images/tably-android-icon.png",
         "monochromeImage": "./assets/images/tably-android-monochrome.png"
       },
@@ -34,7 +34,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FAFAF9"
+          "backgroundColor": "#FCFCF7"
         }
       ],
       [

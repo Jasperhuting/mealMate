@@ -61,3 +61,22 @@ export async function inviteFamilyMember(name: string, email: string) {
   if (data?.error) throw new Error(data.error);
   return data as { inviteId: string; personId: string };
 }
+
+export async function updateFamilyMember(personId: string, name: string) {
+  if (!supabase) throw new Error('Supabase is nog niet geconfigureerd.');
+  await ensureMealMateSession();
+  const { error } = await supabase.rpc('update_household_person', {
+    target_person_id: personId,
+    new_display_name: name.trim(),
+  });
+  if (error) throw error;
+}
+
+export async function removeFamilyMember(personId: string) {
+  if (!supabase) throw new Error('Supabase is nog niet geconfigureerd.');
+  await ensureMealMateSession();
+  const { error } = await supabase.rpc('remove_household_person', {
+    target_person_id: personId,
+  });
+  if (error) throw error;
+}

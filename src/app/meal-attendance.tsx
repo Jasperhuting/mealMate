@@ -17,6 +17,7 @@ export default function MealAttendanceScreen() {
   const {
     weekDays,
     plannedMeals,
+    mealPlans,
     getRecipe,
     familyMembers,
     mealAttendance,
@@ -27,6 +28,12 @@ export default function MealAttendanceScreen() {
     (weekDay) => weekDay.isoDate === (typeof dayId === 'string' ? dayId : undefined),
   );
   const recipe = day ? getRecipe(plannedMeals[day.isoDate]) : undefined;
+  const mealTitles = day
+    ? (mealPlans[day.isoDate] ?? [])
+        .map((plan) => getRecipe(plan.recipeId)?.title)
+        .filter(Boolean)
+        .join(' · ')
+    : '';
   const currentMember = familyMembers.find(
     (member) =>
       member.linkedUserId === session?.user.id ||
@@ -58,7 +65,9 @@ export default function MealAttendanceScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.eyebrow}>AANWEZIGHEID</Text>
           <Text style={styles.title}>Wie eet er mee op {day.label.toLowerCase()}?</Text>
-          {recipe ? <Text style={styles.subtitle}>{recipe.title}</Text> : null}
+          {mealTitles || recipe ? (
+            <Text style={styles.subtitle}>{mealTitles || recipe?.title}</Text>
+          ) : null}
 
           <View style={styles.options}>
             {orderedMembers.map((member) => {

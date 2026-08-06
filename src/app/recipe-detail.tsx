@@ -1,5 +1,6 @@
 import * as Linking from 'expo-linking';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,6 +16,16 @@ export default function RecipeDetailScreen() {
   const router = useRouter();
   const { familyMembers, getRecipe, ratings } = useMealMate();
   const recipe = getRecipe(typeof recipeId === 'string' ? recipeId : undefined);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollToTop = useCallback(() => {
+    scrollViewRef.current?.scrollTo({ animated: false, y: 0 });
+  }, []);
+
+  useFocusEffect(scrollToTop);
+
+  useEffect(() => {
+    scrollToTop();
+  }, [recipeId, scrollToTop]);
 
   if (!recipe) {
     return (
@@ -39,7 +50,10 @@ export default function RecipeDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <ModalScreenHeader title="Gerecht" closeLabel="Sluit gerechtdetails" />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}>
         <RecipeImage recipe={recipe} style={styles.heroImage} />
 
         <Text style={styles.eyebrow}>GERECHT</Text>
@@ -100,7 +114,7 @@ export default function RecipeDetailScreen() {
             accessibilityRole="link"
             accessibilityLabel={`Open het originele recept voor ${recipe.title}`}
             style={({ pressed }) => [styles.sourceLink, pressed && styles.pressed]}>
-            <Text style={styles.sourceLinkText}>Bekijk het originele recept bij Peas Maker</Text>
+            <Text style={styles.sourceLinkText}>Bekijk het originele recept</Text>
             <AppIcon
               name={{ ios: 'arrow.up.right', android: 'open_in_new', web: 'open_in_new' }}
               tintColor={palette.sageDark}

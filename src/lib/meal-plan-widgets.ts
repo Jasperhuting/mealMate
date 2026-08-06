@@ -1,5 +1,6 @@
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { widgetsDirectory } from 'expo-widgets';
 import { Platform } from 'react-native';
 
@@ -15,6 +16,7 @@ type WidgetRecipe = Pick<Recipe, 'id' | 'title'> & { widgetImageUri?: string };
 
 const emptyMealTitle = 'Nog niets gepland';
 const timelineDays = 8;
+const widgetImageMaxDimension = 400;
 const cachedWidgetImages = new Map<string, { sourceKey: string; uri: string }>();
 let widgetUpdateQueue = Promise.resolve();
 
@@ -89,13 +91,13 @@ const copyRecipeImageToWidgetStorage = async (recipe: Recipe) => {
   }
 
   if (!sourceUri) return undefined;
-  const sourceKey = sourceUri;
+  const sourceKey = `compact-v1:${sourceUri}`;
   const cached = cachedWidgetImages.get(recipe.id);
   if (cached?.sourceKey === sourceKey && new File(cached.uri).exists) return cached.uri;
 
   const destination = new File(
     widgetsDirectory,
-    `meal-${safeFileName(recipe.id)}.${extension}`,
+    `meal-${safeFileName(recipe.id)}-compact.jpg`,
   );
 
   if (/^https?:\/\//i.test(sourceUri)) {
@@ -106,6 +108,27 @@ const copyRecipeImageToWidgetStorage = async (recipe: Recipe) => {
   } else {
     if (destination.exists) destination.delete();
     await new File(sourceUri).copy(destination);
+  }
+
+  // WidgetKit archiveert de bronafbeelding, niet alleen het kleine SwiftUI-frame.
+  // Vooral lockscreen-widgets worden volledig geweigerd wanneer die bron te groot is.
+  const sourceImage = await ImageManipulator.manipulate(destination.uri).renderAsync();
+  const longestSide = Math.max(sourceImage.width, sourceImage.height);
+
+  if (longestSide > widgetImageMaxDimension || extension !== 'jpg') {
+    const context = ImageManipulator.manipulate(destination.uri);
+    if (sourceImage.width >= sourceImage.height) {
+      context.resize({ width: widgetImageMaxDimension, height: null });
+    } else {
+      context.resize({ width: null, height: widgetImageMaxDimension });
+    }
+    const resizedImage = await context.renderAsync();
+    const resizedFile = await resizedImage.saveAsync({
+      compress: 0.86,
+      format: SaveFormat.JPEG,
+    });
+    destination.delete();
+    await new File(resizedFile.uri).copy(destination);
   }
 
   cachedWidgetImages.set(recipe.id, { sourceKey, uri: destination.uri });

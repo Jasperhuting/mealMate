@@ -2,8 +2,8 @@ project_id = "mealmate"
 
 [auth]
 enable_anonymous_sign_ins = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["mealmate://auth/callback", "exp://192.168.68.54:4174/--/auth/callback"]
+site_url = "mealmate://auth/callback"
+additional_redirect_urls = ["mealmate://**", "exp://192.168.68.54:4174/--/auth/callback"]
 
 [auth.mfa.totp]
 enroll_enabled = true
@@ -13,6 +13,11 @@ verify_enabled = true
 enable_confirmations = false
 max_frequency = "1m"
 otp_length = 8
+
+[auth.external.apple]
+enabled = true
+client_id = "nl.mealmate.app,host.exp.Exponent"
+secret = ""
 
 [functions.parse-recipe]
 verify_jwt = true

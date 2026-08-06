@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
@@ -14,12 +14,17 @@ import { useMealMate } from '@/state/meal-mate-provider';
 import { useRecipeFilters } from '@/state/recipe-filter-provider';
 
 export default function AddMealScreen() {
-  const { dayId } = useLocalSearchParams<{ dayId: string }>();
+  const { dayId, mealMemberId, replaceRecipeId } = useLocalSearchParams<{
+    dayId: string;
+    mealMemberId?: string;
+    replaceRecipeId?: string;
+  }>();
   const router = useRouter();
   const {
     recipes,
     weekDays,
     plannedMeals,
+    mealPlans,
     leftoverMeals,
     planMeal,
     familyMembers,
@@ -27,17 +32,31 @@ export default function AddMealScreen() {
     mealAttendance,
   } = useMealMate();
   const { filters, activeFilterCount, setFilters, clearFilters } = useRecipeFilters();
-  const initialRecipeId = typeof dayId === 'string' ? plannedMeals[dayId] : undefined;
+  const initialRecipeId = typeof replaceRecipeId === 'string'
+    ? replaceRecipeId
+    : typeof dayId === 'string'
+      ? plannedMeals[dayId]
+      : undefined;
   const initialLeftoverFrom = typeof dayId === 'string' ? leftoverMeals[dayId] : undefined;
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | undefined>();
   const [leftoverFrom, setLeftoverFrom] = useState<string | undefined>();
   const [atHomeIds, setAtHomeIds] = useState<string[]>([]);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [leftoversExpanded, setLeftoversExpanded] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
   const selectedRecipe = useMemo(
     () => recipes.find((recipe) => recipe.id === selectedRecipeId),
     [recipes, selectedRecipeId],
   );
+  const allIngredientsAtHome = selectedRecipe?.ingredients.length
+    ? selectedRecipe.ingredients.every((ingredient) => atHomeIds.includes(ingredient.id))
+    : false;
   const day = weekDays.find((item) => item.id === dayId || item.isoDate === dayId);
+  const plannedOptions = day ? mealPlans[day.isoDate] ?? [] : [];
+  const planBeingReplaced = typeof replaceRecipeId === 'string'
+    ? plannedOptions.find((plan) => plan.recipeId === replaceRecipeId)
+    : undefined;
   const leftoverOptions = useMemo(() => {
     if (!day) return [];
     const seenRecipes = new Set<string>();
@@ -73,22 +92,31 @@ export default function AddMealScreen() {
       .filter((score): score is number => typeof score === 'number');
     return scores.length ? scores.reduce((total, score) => total + score, 0) / scores.length : null;
   }, [eatingMembers, ratings]);
-  const sortedRecipes = useMemo(
-    () => recipes.filter((recipe) => recipeMatchesFilters(
-      recipe,
-      filters,
-      ratings,
-      eatingMembers.map((member) => member.id),
-    )).sort((a, b) => {
+  const sortedRecipes = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('nl');
+    return recipes.filter((recipe) => {
+      const matchesQuery = !normalizedQuery
+        || `${recipe.title} ${recipe.subtitle}`.toLocaleLowerCase('nl').includes(normalizedQuery);
+      return matchesQuery && recipeMatchesFilters(
+        recipe,
+        filters,
+        ratings,
+        eatingMembers.map((member) => member.id),
+      );
+    }).sort((a, b) => {
       const aScore = recipeScore(a);
       const bScore = recipeScore(b);
       if (aScore === null && bScore === null) return a.title.localeCompare(b.title, 'nl');
       if (aScore === null) return 1;
       if (bScore === null) return -1;
       return bScore - aScore;
-    }),
-    [eatingMembers, filters, ratings, recipeScore, recipes],
-  );
+    });
+  }, [eatingMembers, filters, query, ratings, recipeScore, recipes]);
+
+  const clearQuery = () => {
+    searchInputRef.current?.clear();
+    setQuery('');
+  };
 
   const activeFilterLabels = useMemo(() => {
     const labels: { key: string; label: string }[] = [];
@@ -130,14 +158,35 @@ export default function AddMealScreen() {
   };
 
   const selectRecipe = (recipe: Recipe) => {
+    const existingPlan = plannedOptions.find((plan) => plan.recipeId === recipe.id);
+    const alreadyAssignedIds = new Set(plannedOptions.flatMap((plan) => plan.memberIds));
+    const unassignedIds = familyMembers
+      .map((member) => member.id)
+      .filter((memberId) => !alreadyAssignedIds.has(memberId));
     setSelectedRecipeId(recipe.id);
+    setSelectedMemberIds(
+      existingPlan?.memberIds ?? planBeingReplaced?.memberIds ?? (typeof mealMemberId === 'string'
+        ? [mealMemberId]
+        : plannedOptions.length === 0
+          ? eatingMembers.map((member) => member.id)
+          : unassignedIds),
+    );
     setLeftoverFrom(undefined);
     setAtHomeIds([]);
     mealMateHaptics.selection();
   };
 
   const selectLeftover = (recipe: Recipe, sourceDate: string) => {
+    const existingPlan = plannedOptions.find((plan) => plan.recipeId === recipe.id);
+    const alreadyAssignedIds = new Set(plannedOptions.flatMap((plan) => plan.memberIds));
     setSelectedRecipeId(recipe.id);
+    setSelectedMemberIds(
+      existingPlan?.memberIds ?? planBeingReplaced?.memberIds ?? (typeof mealMemberId === 'string'
+        ? [mealMemberId]
+        : familyMembers
+            .map((member) => member.id)
+            .filter((memberId) => !alreadyAssignedIds.has(memberId))),
+    );
     setLeftoverFrom(sourceDate);
     setAtHomeIds([]);
     mealMateHaptics.selection();
@@ -152,15 +201,30 @@ export default function AddMealScreen() {
     mealMateHaptics.selection();
   };
 
-  const clearAtHome = () => {
-    if (atHomeIds.length === 0) return;
-    setAtHomeIds([]);
+  const toggleAllAtHome = () => {
+    if (!selectedRecipe || selectedRecipe.ingredients.length === 0) return;
+    setAtHomeIds((current) => {
+      const allSelected = selectedRecipe.ingredients.every((ingredient) =>
+        current.includes(ingredient.id),
+      );
+      return allSelected ? [] : selectedRecipe.ingredients.map((ingredient) => ingredient.id);
+    });
+    mealMateHaptics.selection();
+  };
+
+  const toggleMember = (memberId: string) => {
+    setSelectedMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
     mealMateHaptics.selection();
   };
 
   const confirm = async () => {
     if (!selectedRecipe || typeof dayId !== 'string') return;
-    await planMeal(dayId, selectedRecipe.id, atHomeIds, leftoverFrom);
+    if (familyMembers.length > 0 && selectedMemberIds.length === 0) return;
+    await planMeal(dayId, selectedRecipe.id, atHomeIds, selectedMemberIds, leftoverFrom);
     mealMateHaptics.success();
     router.back();
   };
@@ -181,11 +245,6 @@ export default function AddMealScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <View>
-              <View style={styles.stepRow}>
-                <Text style={styles.stepActive}>1 Gerecht</Text>
-                <View style={styles.stepLineActive} />
-                <Text style={styles.stepActive}>2 Voorraad</Text>
-              </View>
               <Text style={styles.eyebrow}>{day?.label.toUpperCase()} {day?.date} {day?.month.toUpperCase()}</Text>
               <Text style={styles.title}>
                 {leftoverFrom ? 'Plan dit als restje' : 'Wat heb je al in huis?'}
@@ -212,29 +271,35 @@ export default function AddMealScreen() {
                   }}
                   accessibilityRole="button"
                   style={styles.changeButton}>
-                  <Text style={styles.changeText}>Wijzig</Text>
+                  <Text style={styles.changeText}>Wijzig gerecht</Text>
                 </Pressable>
               </View>
               {!leftoverFrom ? (
                 <View style={styles.inventoryHeading}>
                   <Text style={styles.inventoryTitle}>Tik aan wat al aanwezig is</Text>
                   <Pressable
-                    onPress={clearAtHome}
-                    disabled={atHomeIds.length === 0}
+                    onPress={toggleAllAtHome}
+                    disabled={selectedRecipe.ingredients.length === 0}
                     accessibilityRole="button"
-                    accessibilityLabel="Zet alle aanwezige ingrediënten uit"
-                    accessibilityState={{ disabled: atHomeIds.length === 0 }}
+                    accessibilityLabel={
+                      allIngredientsAtHome
+                        ? 'Zet alle aanwezige ingrediënten uit'
+                        : 'Zet alle aanwezige ingrediënten aan'
+                    }
+                    accessibilityState={{ disabled: selectedRecipe.ingredients.length === 0 }}
                     style={({ pressed }) => [
                       styles.clearSelectionButton,
-                      atHomeIds.length === 0 && styles.clearSelectionButtonDisabled,
+                      selectedRecipe.ingredients.length === 0 && styles.clearSelectionButtonDisabled,
                       pressed && styles.pressed,
                     ]}>
                     <Text
                       style={[
                         styles.clearSelectionText,
-                        atHomeIds.length === 0 && styles.clearSelectionTextDisabled,
+                        selectedRecipe.ingredients.length === 0 && styles.clearSelectionTextDisabled,
                       ]}>
-                      Alles uitzetten
+                      {allIngredientsAtHome
+                        ? 'Alles uitzetten'
+                        : 'Alles aanzetten'}
                     </Text>
                   </Pressable>
                 </View>
@@ -249,7 +314,59 @@ export default function AddMealScreen() {
             />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListFooterComponent={<View style={styles.footerSpace} />}
+          ListFooterComponent={
+            <View style={styles.assignmentSection}>
+              {familyMembers.length > 0 ? (
+                <>
+                  <Text style={styles.assignmentTitle}>Wie eet dit gerecht?</Text>
+                  <Text style={styles.assignmentSubtitle}>
+                    Kies één of meer personen. Je kunt daarna nog een ander gerecht plannen.
+                  </Text>
+                  <View style={styles.memberOptions}>
+                    {familyMembers.map((member) => {
+                      const selected = selectedMemberIds.includes(member.id);
+                      const wasAbsent = mealAttendance[day?.isoDate ?? '']?.[member.id] === false;
+                      return (
+                        <Pressable
+                          key={member.id}
+                          onPress={() => toggleMember(member.id)}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: selected }}
+                          style={({ pressed }) => [
+                            styles.memberOption,
+                            selected && styles.memberOptionSelected,
+                            pressed && styles.pressed,
+                          ]}>
+                          <View style={[styles.memberDot, { backgroundColor: member.color }]} />
+                          <View style={styles.memberCopy}>
+                            <Text style={[styles.memberName, selected && styles.memberNameSelected]}>
+                              {member.name}
+                            </Text>
+                            {wasAbsent && !selected ? (
+                              <Text style={styles.memberStatus}>Stond op ‘eet niet mee’</Text>
+                            ) : null}
+                          </View>
+                          <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                            {selected ? (
+                              <AppIcon
+                                name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                                tintColor={palette.white}
+                                size={15}
+                              />
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {selectedMemberIds.length === 0 ? (
+                    <Text style={styles.assignmentError}>Kies minimaal één persoon.</Text>
+                  ) : null}
+                </>
+              ) : null}
+              <View style={styles.footerSpace} />
+            </View>
+          }
         />
         <View style={styles.bottomBar}>
           <View style={styles.bottomCopy}>
@@ -264,8 +381,16 @@ export default function AddMealScreen() {
           </View>
           <Pressable
             onPress={() => void confirm()}
+            disabled={familyMembers.length > 0 && selectedMemberIds.length === 0}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+            accessibilityState={{
+              disabled: familyMembers.length > 0 && selectedMemberIds.length === 0,
+            }}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              familyMembers.length > 0 && selectedMemberIds.length === 0 && styles.primaryButtonDisabled,
+              pressed && styles.pressed,
+            ]}>
             <Text style={styles.primaryButtonText}>
               {leftoverFrom ? 'Plan als restje' : 'Plan gerecht'}
             </Text>
@@ -283,28 +408,31 @@ export default function AddMealScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View>
-            <View style={styles.stepRow}>
-              <Text style={styles.stepActive}>1 Gerecht</Text>
-              <View style={styles.stepLine} />
-              <Text style={styles.stepInactive}>2 Voorraad</Text>
-            </View>
             <Text style={styles.eyebrow}>{day?.label.toUpperCase()} {day?.date} {day?.month.toUpperCase()}</Text>
             <Text style={styles.title}>Kies een gerecht</Text>
             <Text style={styles.subtitle}>
-              {initialRecipeId ? 'Vervang het huidige gerecht voor deze dag.' : 'Wat willen jullie deze dag eten?'}
+              {initialRecipeId ? 'Kies nog een gerecht of werk een bestaand gerecht bij.' : 'Wat willen jullie deze dag eten?'}
             </Text>
-            {absentMembers.length > 0 ? (
+            {familyMembers.length > 0 ? (
               <View style={styles.tasteHint}>
                 <AppIcon
-                  name={{ ios: 'person.crop.circle.badge.minus', android: 'person_remove', web: 'person_remove' }}
+                  name={absentMembers.length > 0
+                    ? { ios: 'person.crop.circle.badge.minus', android: 'person_remove', web: 'person_remove' }
+                    : { ios: 'person.2.fill', android: 'group', web: 'group' }}
                   tintColor={palette.sageDark}
                   size={17}
                 />
-                <Text style={styles.tasteHintText}>
-                  Gesorteerd voor wie mee-eet. {absentMembers.map((member) => member.name).join(', ')} telt niet mee.
-                </Text>
+                <View style={styles.tasteHintCopy}>
+                  <Text style={styles.tasteHintTitle}>Beste keuze voor wie mee-eet</Text>
+                  <Text style={styles.tasteHintText}>
+                    {absentMembers.length > 0
+                      ? `${eatingMembers.map((member) => member.name).join(' en ') || 'Niemand'} telt mee. ${absentMembers.map((member) => member.name).join(' en ')} eet niet mee.`
+                      : 'Iedereen eet mee en telt mee in het gezamenlijke cijfer.'}
+                  </Text>
+                </View>
               </View>
             ) : null}
             {leftoverOptions.length > 0 ? (
@@ -414,6 +542,37 @@ export default function AddMealScreen() {
                 ) : null}
               </Pressable>
             </View>
+            <View style={styles.searchBox}>
+              <AppIcon
+                name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
+                tintColor={palette.textSoft}
+                size={19}
+              />
+              <TextInput
+                ref={searchInputRef}
+                defaultValue=""
+                onChangeText={setQuery}
+                placeholder="Zoek een gerecht..."
+                placeholderTextColor={palette.textSoft}
+                returnKeyType="search"
+                style={styles.searchInput}
+                accessibilityLabel="Gerecht zoeken"
+              />
+              {query ? (
+                <Pressable
+                  onPress={clearQuery}
+                  accessibilityRole="button"
+                  accessibilityLabel="Zoekopdracht wissen"
+                  hitSlop={8}
+                  style={({ pressed }) => pressed && styles.pressed}>
+                  <AppIcon
+                    name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
+                    tintColor={palette.textSoft}
+                    size={19}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
             {activeFilterLabels.length > 0 ? (
               <View style={styles.activeFiltersBlock}>
                 <View style={styles.activeFiltersHeading}>
@@ -451,16 +610,22 @@ export default function AddMealScreen() {
           </View>
         }
         ListEmptyComponent={
-          activeFilterCount > 0 ? (
+          query.trim() || activeFilterCount > 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>Geen gerecht gevonden</Text>
-              <Text style={styles.emptyText}>Pas je filters aan om meer gerechten te zien.</Text>
-              <Pressable
-                onPress={clearFilters}
-                accessibilityRole="button"
-                style={({ pressed }) => [styles.emptyButton, pressed && styles.pressed]}>
-                <Text style={styles.emptyButtonText}>Wis alle filters</Text>
-              </Pressable>
+              <Text style={styles.emptyText}>
+                {activeFilterCount > 0
+                  ? 'Probeer een andere zoekterm of pas je filters aan.'
+                  : 'Probeer een andere zoekterm.'}
+              </Text>
+              {activeFilterCount > 0 ? (
+                <Pressable
+                  onPress={clearFilters}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [styles.emptyButton, pressed && styles.pressed]}>
+                  <Text style={styles.emptyButtonText}>Wis alle filters</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null
         }
@@ -542,16 +707,13 @@ function IngredientRow({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   content: { padding: spacing.xl, paddingBottom: spacing.xxl },
-  stepRow: { alignItems: 'center', flexDirection: 'row', marginBottom: spacing.xl },
-  stepActive: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
-  stepInactive: { color: palette.textSoft, fontSize: 12, fontWeight: '600' },
-  stepLine: { backgroundColor: palette.border, flex: 1, height: 1, marginHorizontal: spacing.md },
-  stepLineActive: { backgroundColor: palette.sage, flex: 1, height: 1, marginHorizontal: spacing.md },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
   subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
   tasteHint: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.md, flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md },
-  tasteHintText: { color: palette.sageDark, flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 16 },
+  tasteHintCopy: { flex: 1 },
+  tasteHintTitle: { color: palette.sageDark, fontSize: 13, fontWeight: '800' },
+  tasteHintText: { color: palette.sageDark, fontSize: 11, fontWeight: '600', lineHeight: 16, marginTop: 2 },
   leftoverSection: {
     backgroundColor: palette.sageSoft,
     borderRadius: radius.lg,
@@ -608,6 +770,17 @@ const styles = StyleSheet.create({
   listHeadingCopy: { alignItems: 'baseline', flex: 1, flexDirection: 'row', gap: spacing.sm },
   listTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   listCount: { color: palette.textSoft, fontSize: 12, fontWeight: '700' },
+  searchBox: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: 'row',
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  searchInput: { color: palette.text, flex: 1, fontSize: 15, height: 50, marginHorizontal: spacing.md },
   filterButton: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
@@ -726,6 +899,27 @@ const styles = StyleSheet.create({
   ingredientName: { color: palette.text, fontSize: 15, fontWeight: '600' },
   ingredientDepartment: { color: palette.textSoft, fontSize: 11, marginTop: 4 },
   ingredientAmount: { color: palette.textMuted, fontSize: 12, fontWeight: '600' },
+  assignmentSection: { marginTop: spacing.xl },
+  assignmentTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
+  assignmentSubtitle: { color: palette.textMuted, fontSize: 13, lineHeight: 18, marginTop: 5 },
+  memberOptions: { gap: spacing.sm, marginTop: spacing.md },
+  memberOption: {
+    alignItems: 'center',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    minHeight: 56,
+    paddingHorizontal: spacing.lg,
+  },
+  memberOptionSelected: { backgroundColor: palette.sageSoft, borderColor: palette.sage },
+  memberDot: { borderRadius: radius.pill, height: 10, width: 10 },
+  memberCopy: { flex: 1, marginLeft: spacing.md },
+  memberName: { color: palette.text, fontSize: 14, fontWeight: '700' },
+  memberNameSelected: { color: palette.sageDark },
+  memberStatus: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
+  assignmentError: { color: palette.danger, fontSize: 12, fontWeight: '700', marginTop: spacing.sm },
   footerSpace: { height: 96 },
   bottomBar: {
     alignItems: 'center',
@@ -739,5 +933,6 @@ const styles = StyleSheet.create({
   bottomCount: { color: palette.text, fontSize: 14, fontWeight: '700' },
   bottomMeta: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
   primaryButton: { backgroundColor: palette.sageDark, borderRadius: radius.pill, paddingHorizontal: spacing.xl, paddingVertical: 14 },
+  primaryButtonDisabled: { backgroundColor: palette.textSoft },
   primaryButtonText: { color: palette.white, fontSize: 14, fontWeight: '700' },
 });

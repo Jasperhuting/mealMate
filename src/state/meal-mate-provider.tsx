@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -13,6 +14,7 @@ import { AppState } from 'react-native';
 
 import {
   createWeekDays,
+  dateToIso,
   normalizeDepartment,
   weekDays as initialWeekDays,
   type Department,
@@ -23,14 +25,17 @@ import {
 import {
   createCloudRecipe,
   deleteCloudRecipe,
-  ensurePeasMakerRecipes,
+  ensureSeedRecipes,
+  loadCloudHiddenRecipeIds,
   loadCloudRecipes,
+  setCloudRecipeHidden,
   updateCloudRecipe,
 } from '@/lib/recipe-repository';
 import { removePersistedRecipeImage } from '@/lib/recipe-image-storage';
 import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import {
   addCloudShoppingItem,
+  carryCloudShoppingItems,
   loadCloudPlannedMeals,
   loadSharedState,
   removeCloudMealPlan,
@@ -41,14 +46,17 @@ import {
   setCloudShoppingItemChecked,
   setCloudShoppingItemDepartment,
 } from '@/lib/shared-state-repository';
-import type { LeftoverMeals, MealAttendance } from '@/lib/shared-state-repository';
+import type {
+  LeftoverMeals,
+  MealAttendance,
+  MealPlans,
+  PlannedMeals,
+} from '@/lib/shared-state-repository';
 import { updateMealPlanWidgets } from '@/lib/meal-plan-widgets';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/state/auth-provider';
 
-type PlannedMeals = Record<string, string | undefined>;
 type Ratings = Record<string, Record<string, number | undefined>>;
-type ExcludedIngredients = Record<string, string[]>;
 
 export type NewRecipe = Omit<Recipe, 'id'>;
 
@@ -74,23 +82,27 @@ type MealMateContextValue = {
   weekDays: WeekDay[];
   familyMembers: FamilyMember[];
   plannedMeals: PlannedMeals;
+  mealPlans: MealPlans;
   leftoverMeals: LeftoverMeals;
   ratings: Ratings;
   mealAttendance: MealAttendance;
   shoppingItems: ShoppingItem[];
   completedShoppingIds: string[];
+  hiddenRecipeIds: string[];
   addShoppingItem: (item: NewShoppingItem) => Promise<void>;
   removeShoppingItem: (itemId: string) => Promise<void>;
   addRecipe: (recipe: NewRecipe) => Promise<Recipe>;
   updateRecipe: (recipeId: string, recipe: NewRecipe, imageChanged: boolean) => Promise<Recipe>;
   removeRecipe: (recipeId: string) => Promise<void>;
+  setRecipeHidden: (recipeId: string, isHidden: boolean) => Promise<void>;
   planMeal: (
     dayId: string,
     recipeId: string,
     atHomeIngredientIds: string[],
+    memberIds: string[],
     leftoverFrom?: string,
   ) => Promise<void>;
-  removeMeal: (dayId: string) => Promise<void>;
+  removeMeal: (dayId: string, mealPlanId?: string) => Promise<void>;
   rateRecipe: (recipeId: string, memberId: string, score: number) => Promise<void>;
   setMealAttendance: (dayId: string, memberId: string, isEating: boolean) => Promise<void>;
   toggleShoppingItem: (itemId: string) => Promise<void>;
@@ -106,6 +118,7 @@ const shoppingId = (name: string, unit: string) =>
   `${name}-${unit}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 const customRecipesStorageKey = 'mealmate.custom-recipes.v1';
+const hiddenRecipesStorageKey = 'mealmate.hidden-recipes.v1';
 const shoppingDepartmentsStorageKey = 'mealmate.shopping-departments.v1';
 
 const createWidgetPlanningDays = () => {
@@ -124,17 +137,21 @@ const createWidgetPlanningDays = () => {
 export function MealMateProvider({ children }: PropsWithChildren) {
   const { avatarUrl, session } = useAuth();
   const [customRecipes, setCustomRecipes] = useState<Recipe[]>([]);
+  const [hiddenRecipeIds, setHiddenRecipeIds] = useState<string[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [plannedMeals, setPlannedMeals] = useState<PlannedMeals>({});
+  const [mealPlans, setMealPlans] = useState<MealPlans>({});
   const [leftoverMeals, setLeftoverMeals] = useState<LeftoverMeals>({});
-  const [excludedIngredients, setExcludedIngredients] = useState<ExcludedIngredients>({});
   const [ratings, setRatings] = useState<Ratings>({});
   const [mealAttendance, setMealAttendanceState] = useState<MealAttendance>({});
   const [completedShoppingIds, setCompletedShoppingIds] = useState<string[]>([]);
   const [manualShoppingItems, setManualShoppingItems] = useState<ShoppingItem[]>([]);
   const [shoppingDepartments, setShoppingDepartments] = useState<Record<string, Department>>({});
   const [weekDays, setWeekDays] = useState<WeekDay[]>(initialWeekDays);
+  const [currentDateIso, setCurrentDateIso] = useState(() => dateToIso(new Date()));
   const [isWidgetDataReady, setIsWidgetDataReady] = useState(false);
+  const completedShoppingIdsRef = useRef(completedShoppingIds);
+  const shoppingItemsRef = useRef<ShoppingItem[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -143,9 +160,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       let localRecipes: Recipe[] = [];
       let localShoppingDepartments: Record<string, Department> = {};
       try {
-        const [storedRecipes, storedShoppingDepartments] = await Promise.all([
+        const [storedRecipes, storedShoppingDepartments, storedHiddenRecipes] = await Promise.all([
           AsyncStorage.getItem(customRecipesStorageKey),
           AsyncStorage.getItem(shoppingDepartmentsStorageKey),
+          AsyncStorage.getItem(hiddenRecipesStorageKey),
         ]);
         if (storedRecipes) {
           const parsedRecipes = JSON.parse(storedRecipes) as Recipe[];
@@ -168,6 +186,14 @@ export function MealMateProvider({ children }: PropsWithChildren) {
             ),
           );
         }
+        if (storedHiddenRecipes) {
+          const parsedHiddenRecipes = JSON.parse(storedHiddenRecipes) as unknown;
+          if (active && Array.isArray(parsedHiddenRecipes)) {
+            setHiddenRecipeIds(
+              parsedHiddenRecipes.filter((id): id is string => typeof id === 'string'),
+            );
+          }
+        }
       } catch {
         // Een beschadigde lokale cache mag de app niet blokkeren.
       }
@@ -180,7 +206,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       }
 
       try {
-        await ensurePeasMakerRecipes();
+        await ensureSeedRecipes();
         let cloudRecipes = await loadCloudRecipes();
         if (cloudRecipes.length === 0 && localRecipes.length > 0) {
           cloudRecipes = [];
@@ -189,18 +215,20 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           }
         }
 
-        const [sharedState, widgetPlannedMeals] = await Promise.all([
+        const [sharedState, widgetPlannedMeals, cloudHiddenRecipeIds] = await Promise.all([
           loadSharedState(initialWeekDays),
           loadCloudPlannedMeals(createWidgetPlanningDays()),
+          loadCloudHiddenRecipeIds(),
         ]);
 
         if (!active) return;
         setCustomRecipes(cloudRecipes);
         setFamilyMembers(sharedState.familyMembers);
         setPlannedMeals({ ...widgetPlannedMeals, ...sharedState.plannedMeals });
+        setMealPlans(sharedState.mealPlans);
         setLeftoverMeals(sharedState.leftoverMeals);
-        setExcludedIngredients(sharedState.excludedIngredients);
         setRatings(sharedState.ratings);
+        setHiddenRecipeIds(cloudHiddenRecipeIds);
         setMealAttendanceState(sharedState.mealAttendance);
         setCompletedShoppingIds(sharedState.completedShoppingIds);
         const syncedDepartments = {
@@ -217,6 +245,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           })),
         );
         await AsyncStorage.setItem(customRecipesStorageKey, JSON.stringify(cloudRecipes));
+        await AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(cloudHiddenRecipeIds));
         await AsyncStorage.setItem(
           shoppingDepartmentsStorageKey,
           JSON.stringify(syncedDepartments),
@@ -240,9 +269,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     if (!isSupabaseConfigured) return;
     const cloudRecipes = await loadCloudRecipes();
     const widgetPlanningDays = createWidgetPlanningDays();
-    const [sharedState, widgetPlannedMeals] = await Promise.all([
+    const [sharedState, widgetPlannedMeals, cloudHiddenRecipeIds] = await Promise.all([
       loadSharedState(weekDays),
       loadCloudPlannedMeals(widgetPlanningDays),
+      loadCloudHiddenRecipeIds(),
     ]);
     setCustomRecipes(cloudRecipes);
     setFamilyMembers(sharedState.familyMembers);
@@ -257,9 +287,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       ...widgetPlannedMeals,
       ...sharedState.plannedMeals,
     }));
+    setMealPlans((current) => ({ ...current, ...sharedState.mealPlans }));
     setLeftoverMeals(sharedState.leftoverMeals);
-    setExcludedIngredients(sharedState.excludedIngredients);
     setRatings(sharedState.ratings);
+    setHiddenRecipeIds(cloudHiddenRecipeIds);
     setMealAttendanceState(sharedState.mealAttendance);
     setCompletedShoppingIds(sharedState.completedShoppingIds);
     setShoppingDepartments((current) => {
@@ -276,6 +307,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       })),
     );
     await AsyncStorage.setItem(customRecipesStorageKey, JSON.stringify(cloudRecipes));
+    await AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(cloudHiddenRecipeIds));
   }, [weekDays]);
 
   const changeWeek = useCallback(
@@ -283,26 +315,48 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       const nextMonday = new Date(`${weekDays[0].isoDate}T12:00:00`);
       nextMonday.setDate(nextMonday.getDate() + direction * 7);
       const nextWeekDays = createWeekDays(nextMonday);
+      const outstandingItems = shoppingItemsRef.current.filter(
+        (item) => !completedShoppingIdsRef.current.includes(item.id),
+      );
       setWeekDays(nextWeekDays);
       setCompletedShoppingIds([]);
 
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured) {
+        setManualShoppingItems(
+          direction === 1
+            ? outstandingItems.map((item) => ({
+                ...item,
+                recipes: [],
+                isManual: true,
+                sources: [{ type: 'manual', title: 'Los toegevoegd', amount: item.amount }],
+              }))
+            : [],
+        );
+        return;
+      }
       try {
+        if (direction === 1) {
+          await carryCloudShoppingItems(
+            outstandingItems,
+            weekDays[0].isoDate,
+            nextWeekDays[0].isoDate,
+          );
+        }
         const sharedState = await loadSharedState(nextWeekDays);
         setPlannedMeals((current) => {
           const updated = { ...current };
           nextWeekDays.forEach((day) => delete updated[day.isoDate]);
           return { ...updated, ...sharedState.plannedMeals };
         });
+        setMealPlans((current) => {
+          const updated = { ...current };
+          nextWeekDays.forEach((day) => delete updated[day.isoDate]);
+          return { ...updated, ...sharedState.mealPlans };
+        });
         setLeftoverMeals((current) => {
           const updated = { ...current };
           nextWeekDays.forEach((day) => delete updated[day.isoDate]);
           return { ...updated, ...sharedState.leftoverMeals };
-        });
-        setExcludedIngredients((current) => {
-          const updated = { ...current };
-          nextWeekDays.forEach((day) => delete updated[day.isoDate]);
-          return { ...updated, ...sharedState.excludedIngredients };
         });
         setRatings(sharedState.ratings);
         setMealAttendanceState((current) => {
@@ -352,13 +406,23 @@ export function MealMateProvider({ children }: PropsWithChildren) {
 
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
+      const nextDateIso = dateToIso(new Date());
+      if (nextDateIso !== currentDateIso) {
+        setCurrentDateIso(nextDateIso);
+        setCompletedShoppingIds([]);
+        if (isSupabaseConfigured) {
+          void reloadHousehold().catch((error) => {
+            if (__DEV__) console.warn('Tably daily shopping refresh failed', error);
+          });
+        }
+      }
       void updateMealPlanWidgets(plannedMeals, recipes).catch((error) => {
         if (__DEV__) console.warn('Tably widget refresh failed', error);
       });
     });
 
     return () => subscription.remove();
-  }, [isWidgetDataReady, plannedMeals, recipes]);
+  }, [currentDateIso, isWidgetDataReady, plannedMeals, recipes, reloadHousehold]);
 
   const addRecipe = useCallback(async (input: NewRecipe) => {
     const recipe: Recipe = isSupabaseConfigured
@@ -422,17 +486,18 @@ export function MealMateProvider({ children }: PropsWithChildren) {
         ]),
       ),
     );
+    setMealPlans((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([day, plans]) => [
+          day,
+          plans.filter((plan) => plan.recipeId !== recipeId),
+        ]),
+      ),
+    );
     setLeftoverMeals((current) => {
       const updated = { ...current };
       Object.entries(plannedMeals).forEach(([day, plannedRecipeId]) => {
         if (plannedRecipeId === recipeId) updated[day] = undefined;
-      });
-      return updated;
-    });
-    setExcludedIngredients((current) => {
-      const updated = { ...current };
-      Object.entries(plannedMeals).forEach(([day, plannedRecipeId]) => {
-        if (plannedRecipeId === recipeId) updated[day] = [];
       });
       return updated;
     });
@@ -441,8 +506,24 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       delete updated[recipeId];
       return updated;
     });
+    setHiddenRecipeIds((current) => {
+      const updated = current.filter((id) => id !== recipeId);
+      void AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(updated));
+      return updated;
+    });
     setCompletedShoppingIds([]);
   }, [customRecipes, plannedMeals]);
+
+  const setRecipeHidden = useCallback(async (recipeId: string, isHidden: boolean) => {
+    if (isSupabaseConfigured) await setCloudRecipeHidden(recipeId, isHidden);
+    setHiddenRecipeIds((current) => {
+      const updated = isHidden
+        ? [...new Set([...current, recipeId])]
+        : current.filter((id) => id !== recipeId);
+      void AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   const getRecipe = useCallback(
     (recipeId?: string) => recipes.find((recipe) => recipe.id === recipeId),
@@ -454,39 +535,81 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       dayId: string,
       recipeId: string,
       atHomeIngredientIds: string[],
+      memberIds: string[],
       leftoverFrom?: string,
     ) => {
       const day = weekDays.find((item) => item.id === dayId || item.isoDate === dayId);
       if (!day) return;
       setPlannedMeals((current) => ({ ...current, [day.isoDate]: recipeId }));
-      setExcludedIngredients((current) => ({
-        ...current,
-        [day.isoDate]: leftoverFrom ? [] : atHomeIngredientIds,
-      }));
+      setMealPlans((current) => {
+        const currentPlans = current[day.isoDate] ?? [];
+        const existingPlan = currentPlans.find((plan) => plan.recipeId === recipeId);
+        const updatedPlan = {
+          id: existingPlan?.id ?? `local-${day.isoDate}-${recipeId}`,
+          recipeId,
+          memberIds,
+          leftoverFrom,
+          excludedIngredientIds: leftoverFrom ? [] : atHomeIngredientIds,
+        };
+        return {
+          ...current,
+          [day.isoDate]: [
+            ...currentPlans
+              .filter((plan) => plan.recipeId !== recipeId)
+              .map((plan) => ({
+                ...plan,
+                memberIds: plan.memberIds.filter((memberId) => !memberIds.includes(memberId)),
+              }))
+              .filter((plan) => familyMembers.length === 0 || plan.memberIds.length > 0),
+            updatedPlan,
+          ],
+        };
+      });
       setLeftoverMeals((current) => ({ ...current, [day.isoDate]: leftoverFrom }));
+      setMealAttendanceState((current) => ({
+        ...current,
+        [day.isoDate]: {
+          ...current[day.isoDate],
+          ...Object.fromEntries(memberIds.map((memberId) => [memberId, true])),
+        },
+      }));
       setCompletedShoppingIds([]);
 
       if (!isSupabaseConfigured) return;
       const recipe = recipes.find((item) => item.id === recipeId);
       if (!recipe) return;
       try {
-        await saveCloudMealPlan(day, recipe, atHomeIngredientIds, leftoverFrom);
+        await saveCloudMealPlan(day, recipe, atHomeIngredientIds, memberIds, leftoverFrom);
+        await Promise.all(
+          memberIds.map((memberId) => saveCloudMealAttendance(day.isoDate, memberId, true)),
+        );
       } catch (error) {
         if (__DEV__) console.warn('Tably weekmenu sync failed', error);
       }
     },
-    [recipes, weekDays],
+    [familyMembers.length, recipes, weekDays],
   );
 
-  const removeMeal = useCallback(async (dayId: string) => {
+  const removeMeal = useCallback(async (dayId: string, mealPlanId?: string) => {
     const day = weekDays.find((item) => item.id === dayId || item.isoDate === dayId);
     if (!day) return;
-    setPlannedMeals((current) => ({ ...current, [day.isoDate]: undefined }));
-    setLeftoverMeals((current) => ({ ...current, [day.isoDate]: undefined }));
-    setExcludedIngredients((current) => ({ ...current, [day.isoDate]: [] }));
+    setMealPlans((current) => {
+      const remaining = mealPlanId
+        ? (current[day.isoDate] ?? []).filter((plan) => plan.id !== mealPlanId)
+        : [];
+      setPlannedMeals((plannedCurrent) => ({
+        ...plannedCurrent,
+        [day.isoDate]: remaining[0]?.recipeId,
+      }));
+      setLeftoverMeals((leftoverCurrent) => ({
+        ...leftoverCurrent,
+        [day.isoDate]: remaining[0]?.leftoverFrom,
+      }));
+      return { ...current, [day.isoDate]: remaining };
+    });
     if (!isSupabaseConfigured) return;
     try {
-      await removeCloudMealPlan(day);
+      await removeCloudMealPlan(day, mealPlanId);
     } catch (error) {
       if (__DEV__) console.warn('Tably weekmenu delete failed', error);
     }
@@ -526,38 +649,41 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     const items = new Map<string, ShoppingItem>();
 
     for (const day of weekDays) {
-      if (leftoverMeals[day.isoDate]) continue;
-      const recipe = getRecipe(plannedMeals[day.isoDate]);
-      if (!recipe) continue;
+      if (day.isoDate < currentDateIso) continue;
+      const plans = mealPlans[day.isoDate] ?? [];
+      for (const plan of plans) {
+        if (plan.leftoverFrom) continue;
+        const recipe = getRecipe(plan.recipeId);
+        if (!recipe) continue;
 
-      const excludedForDay = excludedIngredients[day.isoDate] ?? [];
-      for (const item of recipe.ingredients) {
-        if (excludedForDay.includes(item.id)) continue;
+        for (const item of recipe.ingredients) {
+          if (plan.excludedIngredientIds.includes(item.id)) continue;
 
-        const id = shoppingId(item.name, item.unit);
-        const existing = items.get(id);
-        if (existing) {
-          existing.amount += item.amount;
-          const existingSource = existing.sources.find(
-            (source) => source.type === 'recipe' && source.title === recipe.title,
-          );
-          if (existingSource) {
-            existingSource.amount += item.amount;
+          const id = shoppingId(item.name, item.unit);
+          const existing = items.get(id);
+          if (existing) {
+            existing.amount += item.amount;
+            const existingSource = existing.sources.find(
+              (source) => source.type === 'recipe' && source.title === recipe.title,
+            );
+            if (existingSource) {
+              existingSource.amount += item.amount;
+            } else {
+              existing.recipes.push(recipe.title);
+              existing.sources.push({ type: 'recipe', title: recipe.title, amount: item.amount });
+            }
           } else {
-            existing.recipes.push(recipe.title);
-            existing.sources.push({ type: 'recipe', title: recipe.title, amount: item.amount });
+            items.set(id, {
+              id,
+              name: item.name,
+              amount: item.amount,
+              unit: item.unit,
+              department: item.department,
+              recipes: [recipe.title],
+              isManual: false,
+              sources: [{ type: 'recipe', title: recipe.title, amount: item.amount }],
+            });
           }
-        } else {
-          items.set(id, {
-            id,
-            name: item.name,
-            amount: item.amount,
-            unit: item.unit,
-            department: item.department,
-            recipes: [recipe.title],
-            isManual: false,
-            sources: [{ type: 'recipe', title: recipe.title, amount: item.amount }],
-          });
         }
       }
     }
@@ -587,7 +713,12 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           ? a.name.localeCompare(b.name, 'nl')
           : a.department.localeCompare(b.department, 'nl'),
       );
-  }, [excludedIngredients, getRecipe, leftoverMeals, manualShoppingItems, plannedMeals, shoppingDepartments, weekDays]);
+  }, [currentDateIso, getRecipe, manualShoppingItems, mealPlans, shoppingDepartments, weekDays]);
+
+  useEffect(() => {
+    shoppingItemsRef.current = shoppingItems;
+    completedShoppingIdsRef.current = completedShoppingIds;
+  }, [completedShoppingIds, shoppingItems]);
 
   const addShoppingItem = useCallback(async (input: NewShoppingItem) => {
     const item: ShoppingItem = {
@@ -597,13 +728,13 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       isManual: true,
       sources: [{ type: 'manual', title: 'Los toegevoegd', amount: input.amount }],
     };
-    if (isSupabaseConfigured) await addCloudShoppingItem(input);
+    if (isSupabaseConfigured) await addCloudShoppingItem(input, weekDays[0].isoDate);
     setManualShoppingItems((current) => [
       ...current.filter((candidate) => candidate.id !== item.id),
       item,
     ]);
     setCompletedShoppingIds((current) => current.filter((id) => id !== item.id));
-  }, []);
+  }, [weekDays]);
 
   const removeShoppingItem = useCallback(
     async (itemId: string) => {
@@ -612,13 +743,15 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       const remainsOnListForRecipe = Boolean(
         shoppingItems.find((candidate) => candidate.id === itemId)?.recipes.length,
       );
-      if (isSupabaseConfigured) await removeCloudShoppingItem(item.name, item.unit);
+      if (isSupabaseConfigured) {
+        await removeCloudShoppingItem(item.name, item.unit, weekDays[0].isoDate);
+      }
       setManualShoppingItems((current) => current.filter((candidate) => candidate.id !== itemId));
       if (!remainsOnListForRecipe) {
         setCompletedShoppingIds((current) => current.filter((id) => id !== itemId));
       }
     },
-    [manualShoppingItems, shoppingItems],
+    [manualShoppingItems, shoppingItems, weekDays],
   );
 
   const toggleShoppingItem = useCallback(
@@ -672,16 +805,19 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       weekDays,
       familyMembers: displayedFamilyMembers,
       plannedMeals,
+      mealPlans,
       leftoverMeals,
       ratings,
       mealAttendance,
       shoppingItems,
       completedShoppingIds,
+      hiddenRecipeIds,
       addShoppingItem,
       removeShoppingItem,
       addRecipe,
       updateRecipe,
       removeRecipe,
+      setRecipeHidden,
       planMeal,
       removeMeal,
       rateRecipe,
@@ -696,17 +832,20 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       recipes,
       weekDays,
       plannedMeals,
+      mealPlans,
       leftoverMeals,
       displayedFamilyMembers,
       ratings,
       mealAttendance,
       shoppingItems,
       completedShoppingIds,
+      hiddenRecipeIds,
       addShoppingItem,
       removeShoppingItem,
       addRecipe,
       updateRecipe,
       removeRecipe,
+      setRecipeHidden,
       planMeal,
       removeMeal,
       rateRecipe,

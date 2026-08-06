@@ -161,13 +161,15 @@ export default function AddRecipeScreen() {
         ingredients,
         sourceUrl: editingRecipe?.sourceUrl,
       };
-      if (editingRecipe) {
-        await updateRecipe(editingRecipe.id, recipeInput, imageChanged);
-      } else {
-        await addRecipe(recipeInput);
-      }
+      const savedRecipe = editingRecipe
+        ? await updateRecipe(editingRecipe.id, recipeInput, imageChanged)
+        : await addRecipe(recipeInput);
       mealMateHaptics.success();
-      router.back();
+      if (editingRecipe) {
+        router.back();
+      } else {
+        router.replace({ pathname: '/recipe-detail', params: { recipeId: savedRecipe.id } });
+      }
     } catch {
       mealMateHaptics.error();
       Alert.alert(

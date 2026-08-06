@@ -206,6 +206,6 @@ export const weekDays = createWeekDays(monday);
 export const weekRangeLabel = getWeekRangeLabel(weekDays);
 
 export const familyMembers: FamilyMember[] = [
-  { id: 'jasper', name: 'Jasper', initials: 'JH', color: '#C2410C' },
+  { id: 'jasper', name: 'Jasper', initials: 'JH', color: '#0F6F58' },
   { id: 'lisanne', name: 'Lisanne', initials: 'LH', color: '#737373' },
 ];

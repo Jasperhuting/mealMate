@@ -1,17 +1,26 @@
 import type { Department, FamilyMember, Recipe, WeekDay } from '@/data/mock-data';
-import { normalizeDepartment, weekDays as initialWeekDays } from '@/data/mock-data';
+import { dateToIso, normalizeDepartment, weekDays as initialWeekDays } from '@/data/mock-data';
 import { ensureMealMateHousehold, ensureMealMateSession } from '@/lib/mealmate-session';
 import { getAvatarPublicUrl } from '@/lib/avatar-repository';
 import { supabase } from '@/lib/supabase';
 
 export type PlannedMeals = Record<string, string | undefined>;
 export type LeftoverMeals = Record<string, string | undefined>;
+export type PlannedMeal = {
+  id: string;
+  recipeId: string;
+  memberIds: string[];
+  leftoverFrom?: string;
+  excludedIngredientIds: string[];
+};
+export type MealPlans = Record<string, PlannedMeal[]>;
 type Ratings = Record<string, Record<string, number | undefined>>;
 type ExcludedIngredients = Record<string, string[]>;
 export type MealAttendance = Record<string, Record<string, boolean | undefined>>;
 
 export type SharedState = {
   plannedMeals: PlannedMeals;
+  mealPlans: MealPlans;
   leftoverMeals: LeftoverMeals;
   excludedIngredients: ExcludedIngredients;
   ratings: Ratings;
@@ -33,8 +42,27 @@ export type ManualShoppingItem = {
 const shoppingId = (name: string, unit: string) =>
   `${name}-${unit}`.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
+const getTodayIso = () => dateToIso(new Date());
+
+const getWeekStart = (days: WeekDay[]) => days[0]?.isoDate;
+
+const getWeekStartForDate = (isoDate: string) => {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return dateToIso(date);
+};
+
 const isMissingLeftoverColumn = (error: { code?: string; message?: string }) =>
   error.code === '42703' || Boolean(error.message?.includes('leftover_from'));
+
+type QueryPlan = {
+  id: string;
+  recipe_id: string;
+  planned_for: string;
+  leftover_from: string | null;
+  meal_plan_exclusions: { ingredient_id: string }[] | null;
+  meal_plan_people: { person_id: string }[] | null;
+};
 
 async function loadHouseholdPeople(householdId: string) {
   if (!supabase) return [];
@@ -71,25 +99,38 @@ const queryPlans = async (householdId: string, days: WeekDay[] = initialWeekDays
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('meal_plans')
-    .select('id, recipe_id, planned_for, leftover_from, meal_plan_exclusions(ingredient_id)')
+    .select('id, recipe_id, planned_for, leftover_from, meal_plan_exclusions(ingredient_id), meal_plan_people(person_id)')
     .eq('household_id', householdId)
     .gte('planned_for', days[0].isoDate)
     .lte('planned_for', days[days.length - 1].isoDate)
     .order('planned_for');
-  if (!error) return data ?? [];
-  if (!isMissingLeftoverColumn(error)) throw error;
+  if (!error) return (data ?? []) as QueryPlan[];
+
+  const isMissingAssignments = error.code === 'PGRST200' || Boolean(error.message?.includes('meal_plan_people'));
+  if (!isMissingLeftoverColumn(error) && !isMissingAssignments) throw error;
 
   // Tijdens een gefaseerde uitrol kan de app al nieuwer zijn dan het databaseschema.
   // Blijf bestaande week- en gezinsgegevens laden totdat de restjesmigratie is toegepast.
   const { data: legacyData, error: legacyError } = await supabase
     .from('meal_plans')
-    .select('id, recipe_id, planned_for, meal_plan_exclusions(ingredient_id)')
+    .select(
+      isMissingLeftoverColumn(error)
+        ? 'id, recipe_id, planned_for, meal_plan_exclusions(ingredient_id)'
+        : 'id, recipe_id, planned_for, leftover_from, meal_plan_exclusions(ingredient_id)',
+    )
     .eq('household_id', householdId)
     .gte('planned_for', days[0].isoDate)
     .lte('planned_for', days[days.length - 1].isoDate)
     .order('planned_for');
   if (legacyError) throw legacyError;
-  return (legacyData ?? []).map((plan) => ({ ...plan, leftover_from: null }));
+  return ((legacyData ?? []) as unknown as Record<string, unknown>[]).map((plan) => ({
+    id: plan.id as string,
+    recipe_id: plan.recipe_id as string,
+    planned_for: plan.planned_for as string,
+    meal_plan_exclusions: plan.meal_plan_exclusions as { ingredient_id: string }[] | null,
+    leftover_from: typeof plan.leftover_from === 'string' ? plan.leftover_from : null,
+    meal_plan_people: [],
+  })) satisfies QueryPlan[];
 };
 
 export async function loadCloudPlannedMeals(
@@ -108,6 +149,7 @@ export async function saveCloudMealPlan(
   day: WeekDay,
   recipe: Recipe,
   excludedIngredientIds: string[],
+  memberIds: string[],
   leftoverFrom?: string,
 ) {
   if (!supabase) return;
@@ -124,10 +166,10 @@ export async function saveCloudMealPlan(
         recipe_id: recipe.id,
         planned_for: day.isoDate,
         leftover_from: leftoverFrom ?? null,
-        servings: 2,
+        servings: Math.max(memberIds.length, 1),
         added_by: userId,
       },
-      { onConflict: 'household_id,planned_for' },
+      { onConflict: 'household_id,planned_for,recipe_id' },
     )
     .select('id')
     .single();
@@ -140,10 +182,10 @@ export async function saveCloudMealPlan(
           household_id: householdId,
           recipe_id: recipe.id,
           planned_for: day.isoDate,
-          servings: 2,
+          servings: Math.max(memberIds.length, 1),
           added_by: userId,
         },
-        { onConflict: 'household_id,planned_for' },
+        { onConflict: 'household_id,planned_for,recipe_id' },
       )
       .select('id')
       .single();
@@ -151,6 +193,53 @@ export async function saveCloudMealPlan(
     planError = legacyResult.error;
   }
   if (planError || !plan) throw planError ?? new Error('Het weekmenu kon niet worden bewaard.');
+
+  if (memberIds.length > 0) {
+    const { data: otherPlans, error: otherPlansError } = await supabase
+      .from('meal_plans')
+      .select('id, meal_plan_people(person_id)')
+      .eq('household_id', householdId)
+      .eq('planned_for', day.isoDate)
+      .neq('id', plan.id);
+    if (otherPlansError) throw otherPlansError;
+
+    const otherPlanIds = (otherPlans ?? []).map((otherPlan) => otherPlan.id);
+    if (otherPlanIds.length > 0) {
+      const { error: reassignmentError } = await supabase
+        .from('meal_plan_people')
+        .delete()
+        .in('meal_plan_id', otherPlanIds)
+        .in('person_id', memberIds);
+      if (reassignmentError) throw reassignmentError;
+    }
+
+    const emptiedPlanIds = (otherPlans ?? [])
+      .filter((otherPlan) => {
+        const assignedIds = (otherPlan.meal_plan_people ?? []).map((item) => item.person_id);
+        return assignedIds.length > 0 && assignedIds.every((personId) => memberIds.includes(personId));
+      })
+      .map((otherPlan) => otherPlan.id);
+    if (emptiedPlanIds.length > 0) {
+      const { error: emptyPlansError } = await supabase
+        .from('meal_plans')
+        .delete()
+        .in('id', emptiedPlanIds);
+      if (emptyPlansError) throw emptyPlansError;
+    }
+  }
+
+  const { error: peopleDeleteError } = await supabase
+    .from('meal_plan_people')
+    .delete()
+    .eq('meal_plan_id', plan.id);
+  if (peopleDeleteError) throw peopleDeleteError;
+
+  if (memberIds.length > 0) {
+    const { error: peopleInsertError } = await supabase.from('meal_plan_people').insert(
+      memberIds.map((personId) => ({ meal_plan_id: plan.id, person_id: personId })),
+    );
+    if (peopleInsertError) throw peopleInsertError;
+  }
 
   const { error: exclusionDeleteError } = await supabase
     .from('meal_plan_exclusions')
@@ -188,6 +277,7 @@ export async function saveCloudMealPlan(
         department: ingredient.department,
         recipe_id: recipe.id,
         meal_plan_id: plan.id,
+        week_start: getWeekStartForDate(day.isoDate),
         added_by: userId,
       })),
     );
@@ -195,14 +285,16 @@ export async function saveCloudMealPlan(
   }
 }
 
-export async function removeCloudMealPlan(day: WeekDay) {
+export async function removeCloudMealPlan(day: WeekDay, mealPlanId?: string) {
   if (!supabase) return;
   const householdId = await ensureMealMateHousehold();
-  const { error } = await supabase
+  let query = supabase
     .from('meal_plans')
     .delete()
     .eq('household_id', householdId)
     .eq('planned_for', day.isoDate);
+  if (mealPlanId) query = query.eq('id', mealPlanId);
+  const { error } = await query;
   if (error) throw error;
 }
 
@@ -252,13 +344,17 @@ export async function setCloudShoppingItemChecked(
 ) {
   if (!supabase) return;
   const householdId = await ensureMealMateHousehold();
-  const plans = await queryPlans(householdId, days);
+  const weekStart = getWeekStart(days);
+  if (!weekStart) return;
+  const activeDays = days.filter((day) => day.isoDate >= getTodayIso());
+  const plans = activeDays.length > 0 ? await queryPlans(householdId, activeDays) : [];
 
   let manualQuery = supabase
     .from('shopping_items')
     .update({ is_checked: checked })
     .eq('household_id', householdId)
     .eq('name', name)
+    .eq('week_start', weekStart)
     .is('meal_plan_id', null);
   manualQuery = unit ? manualQuery.eq('unit', unit) : manualQuery.is('unit', null);
   const { error: manualError } = await manualQuery;
@@ -294,7 +390,10 @@ export async function setCloudShoppingItemDepartment(
   if (error) throw error;
 }
 
-export async function addCloudShoppingItem(item: Omit<ManualShoppingItem, 'id'>) {
+export async function addCloudShoppingItem(
+  item: Omit<ManualShoppingItem, 'id'>,
+  weekStart: string,
+) {
   if (!supabase) return;
   const [householdId, userId] = await Promise.all([
     ensureMealMateHousehold(),
@@ -306,7 +405,9 @@ export async function addCloudShoppingItem(item: Omit<ManualShoppingItem, 'id'>)
     .select('id')
     .eq('household_id', householdId)
     .eq('name', item.name)
+    .eq('week_start', weekStart)
     .is('meal_plan_id', null)
+    .is('carried_from_week', null)
     .limit(1);
   existingQuery = item.unit ? existingQuery.eq('unit', item.unit) : existingQuery.is('unit', null);
   const { data: existingRows, error: existingError } = await existingQuery;
@@ -331,12 +432,90 @@ export async function addCloudShoppingItem(item: Omit<ManualShoppingItem, 'id'>)
     quantity: item.amount,
     unit: item.unit || null,
     department: item.department,
+    week_start: weekStart,
     added_by: userId,
   });
   if (error) throw error;
 }
 
-export async function removeCloudShoppingItem(name: string, unit: string) {
+export async function carryCloudShoppingItems(
+  items: Omit<ManualShoppingItem, 'id'>[],
+  sourceWeekStart: string,
+  targetWeekStart: string,
+) {
+  if (!supabase) return;
+  const [householdId, userId] = await Promise.all([
+    ensureMealMateHousehold(),
+    ensureMealMateSession(),
+  ]);
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from('shopping_items')
+    .select('id, name, quantity, unit, is_checked')
+    .eq('household_id', householdId)
+    .eq('week_start', targetWeekStart)
+    .eq('carried_from_week', sourceWeekStart)
+    .is('meal_plan_id', null);
+  if (existingError) throw existingError;
+
+  const existingByProduct = new Map(
+    (existingRows ?? []).map((item) => [shoppingId(item.name, item.unit || ''), item]),
+  );
+  const desiredProductIds = new Set(items.map((item) => shoppingId(item.name, item.unit)));
+  const staleIds = (existingRows ?? [])
+    .filter((item) => !desiredProductIds.has(shoppingId(item.name, item.unit || '')))
+    .map((item) => item.id);
+  const newItems: Record<string, unknown>[] = [];
+  const updates: PromiseLike<unknown>[] = [];
+
+  for (const item of items) {
+    const existing = existingByProduct.get(shoppingId(item.name, item.unit));
+    if (existing) {
+      updates.push(
+        supabase
+          .from('shopping_items')
+          .update({
+            quantity: item.amount,
+            department: item.department,
+            is_checked:
+              Number(existing.quantity) === item.amount ? existing.is_checked : false,
+          })
+          .eq('id', existing.id),
+      );
+      continue;
+    }
+
+    newItems.push({
+      household_id: householdId,
+      name: item.name,
+      quantity: item.amount,
+      unit: item.unit || null,
+      department: item.department,
+      week_start: targetWeekStart,
+      carried_from_week: sourceWeekStart,
+      added_by: userId,
+    });
+  }
+
+  const updateResults = await Promise.all(updates);
+  const updateError = updateResults.find(
+    (result): result is { error: unknown } =>
+      Boolean(result && typeof result === 'object' && 'error' in result && result.error),
+  )?.error;
+  if (updateError) throw updateError;
+
+  if (staleIds.length > 0) {
+    const { error } = await supabase.from('shopping_items').delete().in('id', staleIds);
+    if (error) throw error;
+  }
+
+  if (newItems.length > 0) {
+    const { error } = await supabase.from('shopping_items').insert(newItems);
+    if (error) throw error;
+  }
+}
+
+export async function removeCloudShoppingItem(name: string, unit: string, weekStart: string) {
   if (!supabase) return;
   const householdId = await ensureMealMateHousehold();
   let query = supabase
@@ -344,6 +523,7 @@ export async function removeCloudShoppingItem(name: string, unit: string) {
     .delete()
     .eq('household_id', householdId)
     .eq('name', name)
+    .eq('week_start', weekStart)
     .is('meal_plan_id', null);
   query = unit ? query.eq('unit', unit) : query.is('unit', null);
   const { error } = await query;
@@ -354,6 +534,7 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
   if (!supabase) {
     return {
       plannedMeals: {},
+      mealPlans: {},
       leftoverMeals: {},
       excludedIngredients: {},
       ratings: {},
@@ -385,16 +566,30 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
   }
 
   const plannedMeals: PlannedMeals = {};
+  const mealPlans: MealPlans = {};
   const leftoverMeals: LeftoverMeals = {};
   const excludedIngredients: ExcludedIngredients = {};
   for (const plan of plans) {
     const day = days.find((item) => item.isoDate === plan.planned_for);
     if (!day) continue;
-    plannedMeals[day.isoDate] = plan.recipe_id;
-    leftoverMeals[day.isoDate] = plan.leftover_from ?? undefined;
-    excludedIngredients[day.isoDate] = (plan.meal_plan_exclusions ?? []).map(
+    if (!plannedMeals[day.isoDate]) plannedMeals[day.isoDate] = plan.recipe_id;
+    if (!leftoverMeals[day.isoDate]) leftoverMeals[day.isoDate] = plan.leftover_from ?? undefined;
+    const planExcludedIngredientIds = (plan.meal_plan_exclusions ?? []).map(
       (item) => item.ingredient_id,
     );
+    if (!excludedIngredients[day.isoDate]) {
+      excludedIngredients[day.isoDate] = planExcludedIngredientIds;
+    }
+    mealPlans[day.isoDate] = [
+      ...(mealPlans[day.isoDate] ?? []),
+      {
+        id: plan.id,
+        recipeId: plan.recipe_id,
+        memberIds: (plan.meal_plan_people ?? []).map((item) => item.person_id),
+        leftoverFrom: plan.leftover_from ?? undefined,
+        excludedIngredientIds: planExcludedIngredientIds,
+      },
+    ];
   }
 
   const { data: ratingRows, error: ratingError } = await supabase
@@ -406,14 +601,16 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
     ratings[row.recipe_id] = { ...ratings[row.recipe_id], [row.person_id]: row.score };
   }
 
-  const planIds = plans.map((plan) => plan.id);
+  const activePlanIds = plans
+    .filter((plan) => plan.planned_for >= getTodayIso())
+    .map((plan) => plan.id);
   const checkedGroups = new Map<string, boolean[]>();
   const shoppingDepartments: Record<string, Department> = {};
-  if (planIds.length > 0) {
+  if (activePlanIds.length > 0) {
     const { data: shoppingRows, error: shoppingError } = await supabase
       .from('shopping_items')
       .select('name, unit, department, is_checked')
-      .in('meal_plan_id', planIds);
+      .in('meal_plan_id', activePlanIds);
     if (shoppingError) throw shoppingError;
     for (const item of shoppingRows ?? []) {
       const id = shoppingId(item.name, item.unit || '');
@@ -426,6 +623,7 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
     .from('shopping_items')
     .select('name, quantity, unit, department, is_checked')
     .eq('household_id', householdId)
+    .eq('week_start', getWeekStart(days))
     .is('meal_plan_id', null)
     .order('created_at');
   if (manualError) throw manualError;
@@ -437,6 +635,7 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
 
   return {
     plannedMeals,
+    mealPlans,
     leftoverMeals,
     excludedIngredients,
     ratings,

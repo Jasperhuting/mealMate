@@ -1,6 +1,12 @@
 import { File } from 'expo-file-system';
 
-import { normalizeDepartment, recipes as exampleRecipes, type Recipe } from '@/data/mock-data';
+import { curatedRecipes } from '@/data/curated-recipes';
+import {
+  dateToIso,
+  normalizeDepartment,
+  recipes as exampleRecipes,
+  type Recipe,
+} from '@/data/mock-data';
 import { peasMakerRecipes } from '@/data/peas-maker-recipes';
 import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import { ensureMealMateHousehold, ensureMealMateSession } from '@/lib/mealmate-session';
@@ -8,6 +14,12 @@ import { supabase } from '@/lib/supabase';
 
 type NewRecipe = Omit<Recipe, 'id'>;
 type CloudRecipeInput = NewRecipe & { clientKey?: string };
+
+const getWeekStartForDate = (isoDate: string) => {
+  const date = new Date(`${isoDate}T12:00:00`);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return dateToIso(date);
+};
 
 const imageUri = (image: Recipe['image']) => {
   if (!image || typeof image === 'number' || !('uri' in image)) return null;
@@ -49,7 +61,7 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
 
   return Promise.all(
     (data ?? []).map(async (row) => {
-      const bundledRecipe = [...exampleRecipes, ...peasMakerRecipes].find(
+      const bundledRecipe = [...exampleRecipes, ...peasMakerRecipes, ...curatedRecipes].find(
         (recipe) => recipe.clientKey === row.client_key || recipe.id === row.client_key,
       );
       let signedImageUrl: string | null = null;
@@ -86,6 +98,38 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
       };
     }),
   );
+}
+
+export async function loadCloudHiddenRecipeIds(): Promise<string[]> {
+  if (!supabase) return [];
+  const userId = await ensureMealMateSession();
+  const { data, error } = await supabase
+    .from('user_hidden_recipes')
+    .select('recipe_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.recipe_id);
+}
+
+export async function setCloudRecipeHidden(recipeId: string, isHidden: boolean) {
+  if (!supabase) return;
+  const userId = await ensureMealMateSession();
+
+  if (isHidden) {
+    const { error } = await supabase.from('user_hidden_recipes').upsert(
+      { recipe_id: recipeId, user_id: userId },
+      { onConflict: 'recipe_id,user_id' },
+    );
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from('user_hidden_recipes')
+    .delete()
+    .eq('recipe_id', recipeId)
+    .eq('user_id', userId);
+  if (error) throw error;
 }
 
 export async function createCloudRecipe(input: CloudRecipeInput): Promise<Recipe> {
@@ -231,7 +275,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
       ensureMealMateSession(),
       supabase
         .from('meal_plans')
-        .select('id, household_id')
+        .select('id, household_id, planned_for')
         .eq('recipe_id', recipeId),
     ]);
     if (planError) throw planError;
@@ -270,6 +314,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
             department: previous?.department ?? ingredient.department,
             recipe_id: recipeId,
             meal_plan_id: plan.id,
+            week_start: getWeekStartForDate(plan.planned_for),
             is_checked: previous?.is_checked ?? false,
             added_by: userId,
           };
@@ -379,7 +424,7 @@ export async function deleteCloudRecipe(recipeId: string) {
   }
 }
 
-export async function ensurePeasMakerRecipes() {
+export async function ensureSeedRecipes() {
   if (!supabase) return;
   const [userId, householdId] = await Promise.all([
     ensureMealMateSession(),
@@ -403,7 +448,7 @@ export async function ensurePeasMakerRecipes() {
     ...(data ?? []).map((row) => row.client_key),
     ...(deletedSeeds ?? []).map((row) => row.client_key),
   ]);
-  const missingRecipes = peasMakerRecipes.filter(
+  const missingRecipes = [...peasMakerRecipes, ...curatedRecipes].filter(
     (recipe) => recipe.clientKey && !existingKeys.has(recipe.clientKey),
   );
   if (missingRecipes.length === 0) return;
@@ -425,7 +470,7 @@ export async function ensurePeasMakerRecipes() {
     )
     .select('id, client_key');
   if (recipeError || !createdRecipes) {
-    throw recipeError ?? new Error('De Peas Maker-recepten konden niet worden toegevoegd.');
+    throw recipeError ?? new Error('De vaste recepten konden niet worden toegevoegd.');
   }
 
   const recipeIdByClientKey = new Map(

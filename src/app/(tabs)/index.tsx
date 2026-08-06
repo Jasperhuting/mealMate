@@ -22,6 +22,11 @@ import { getInitial, getUserInitial } from '@/lib/user-initial';
 import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 
+const mealMemberName = (name: string) => {
+  const shortName = name.split(/[.@]/)[0] || name;
+  return `${shortName.charAt(0).toUpperCase()}${shortName.slice(1)}`;
+};
+
 export default function WeekScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -29,6 +34,7 @@ export default function WeekScreen() {
   const {
     weekDays,
     plannedMeals,
+    mealPlans,
     leftoverMeals,
     getRecipe,
     removeMeal,
@@ -43,6 +49,7 @@ export default function WeekScreen() {
       : weekDays[0].isoDate;
   });
   const [isChangingWeek, setIsChangingWeek] = useState(false);
+  const [selectedMealMemberId, setSelectedMealMemberId] = useState('all');
   const today = new Date();
   const todayIso = dateToIso(today);
   const todayLabel = today.toLocaleDateString('nl-NL', {
@@ -51,20 +58,54 @@ export default function WeekScreen() {
     month: 'long',
   });
 
-  const selectedDay =
-    weekDays.find((day) => day.isoDate === selectedDayId) ?? weekDays[0];
-  const selectedRecipe = getRecipe(plannedMeals[selectedDay.isoDate]);
-  const plannedCount = weekDays.filter((day) => plannedMeals[day.isoDate]).length;
   const currentMember = familyMembers.find(
     (member) =>
       member.linkedUserId === session?.user.id ||
       (Boolean(member.email) &&
         member.email?.trim().toLowerCase() === session?.user.email?.trim().toLowerCase()),
   );
+  const showingEveryone = selectedMealMemberId === 'all';
+  const activeMealMemberId = showingEveryone
+    ? undefined
+    : (familyMembers.some((member) => member.id === selectedMealMemberId)
+        ? selectedMealMemberId
+        : currentMember?.id) ?? familyMembers[0]?.id;
+  const activeMealMember = familyMembers.find((member) => member.id === activeMealMemberId);
+  const activeMealMemberName = showingEveryone
+    ? 'iedereen'
+    : activeMealMember
+    ? mealMemberName(activeMealMember.name)
+    : 'jullie';
+  const selectedDay =
+    weekDays.find((day) => day.isoDate === selectedDayId) ?? weekDays[0];
+  const plannedCount = weekDays.filter((day) => {
+    const dayPlans = mealPlans[day.isoDate] ?? [];
+    if (dayPlans.length === 0) return Boolean(plannedMeals[day.isoDate]);
+    return showingEveryone
+      ? dayPlans.length > 0
+      : activeMealMemberId
+      ? dayPlans.some((plan) => plan.memberIds.includes(activeMealMemberId))
+      : dayPlans.length > 0;
+  }).length;
   const avatarInitial = getInitial(currentMember?.initials) ?? getUserInitial(session?.user);
 
-  const openPlanner = (day: WeekDay) => {
-    router.push({ pathname: '/add-meal', params: { dayId: day.isoDate } });
+  const openPlanner = (day: WeekDay, replaceCurrent = false) => {
+    const dayPlans = mealPlans[day.isoDate] ?? [];
+    const planToReplace = activeMealMemberId
+      ? dayPlans.find((plan) => plan.memberIds.includes(activeMealMemberId))
+      : dayPlans.length === 1
+        ? dayPlans[0]
+        : undefined;
+    router.push({
+      pathname: '/add-meal',
+      params: {
+        dayId: day.isoDate,
+        ...(activeMealMemberId ? { mealMemberId: activeMealMemberId } : {}),
+        ...(replaceCurrent && planToReplace
+          ? { replaceRecipeId: planToReplace.recipeId }
+          : {}),
+      },
+    });
   };
 
   const openRecipe = (day: WeekDay, recipeId: string) => {
@@ -101,17 +142,33 @@ export default function WeekScreen() {
     }
   };
 
-  const confirmRemove = () => {
-    if (!selectedRecipe) return;
+  const confirmRemove = ({
+    day,
+    mealPlanId,
+    memberIds,
+    recipeTitle,
+  }: {
+    day: WeekDay;
+    mealPlanId?: string;
+    memberIds?: string[];
+    recipeTitle: string;
+  }) => {
+    const assignedMemberNames = familyMembers
+      .filter((member) => memberIds?.includes(member.id))
+      .map((member) => mealMemberName(member.name));
+    const assignment =
+      assignedMemberNames.length === familyMembers.length
+        ? 'iedereen'
+        : assignedMemberNames.join(' en ') || activeMealMemberName;
     Alert.alert(
       'Uit weekplanning halen?',
-      `${selectedRecipe.title} wordt alleen bij ${selectedDay.label.toLowerCase()} weggehaald. Het recept blijft bewaard.`,
+      `${recipeTitle} wordt voor ${assignment} bij ${day.label.toLowerCase()} weggehaald. Het recept blijft bewaard.`,
       [
         { text: 'Annuleer', style: 'cancel' },
         {
           text: 'Haal weg',
           style: 'destructive',
-          onPress: () => void removeMeal(selectedDay.isoDate),
+          onPress: () => void removeMeal(day.isoDate, mealPlanId),
         },
       ],
     );
@@ -165,8 +222,17 @@ export default function WeekScreen() {
 
         <View style={styles.dayStrip} accessibilityRole="tablist">
           {weekDays.map((day) => {
-            const recipe = getRecipe(plannedMeals[day.isoDate]);
-            const leftoverFrom = leftoverMeals[day.isoDate];
+            const dayPlans = mealPlans[day.isoDate] ?? [];
+            const memberPlan = showingEveryone
+              ? dayPlans[0]
+              : activeMealMemberId
+              ? dayPlans.find((plan) => plan.memberIds.includes(activeMealMemberId))
+              : dayPlans[0];
+            const recipe = getRecipe(
+              memberPlan?.recipeId ??
+                (dayPlans.length === 0 ? plannedMeals[day.isoDate] : undefined),
+            );
+            const leftoverFrom = memberPlan?.leftoverFrom ?? leftoverMeals[day.isoDate];
             const selected = selectedDay.isoDate === day.isoDate;
             const isToday = day.isoDate === todayIso;
             const isPast = day.isoDate < todayIso;
@@ -176,7 +242,7 @@ export default function WeekScreen() {
                 onPress={() => setSelectedDayId(day.isoDate)}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`${day.label} ${day.date} ${day.month}${isPast ? ', voorbij' : ''}${recipe ? `, ${recipe.title}${leftoverFrom ? ' als restje' : ''} gepland` : ', nog leeg'}`}
+                accessibilityLabel={`${day.label} ${day.date} ${day.month}${isPast ? ', voorbij' : ''}${recipe ? showingEveryone && dayPlans.length > 1 ? `, ${dayPlans.length} gerechten gepland` : `, ${recipe.title}${leftoverFrom ? ' als restje' : ''} gepland voor ${activeMealMemberName}` : `, nog leeg voor ${activeMealMemberName}`}`}
                 style={({ pressed }) => [
                   styles.dayButton,
                   isPast && !selected && styles.dayButtonPast,
@@ -238,30 +304,136 @@ export default function WeekScreen() {
 
         <View style={styles.listHeading}>
           <Text style={styles.listTitle}>Weekplanning</Text>
-          <Text style={styles.listMeta}>{plannedCount} van 7 gepland</Text>
+          <Text style={styles.listMeta}>
+            {showingEveryone
+              ? `${plannedCount} van 7 gepland`
+              : `${plannedCount} van 7 voor ${activeMealMemberName}`}
+          </Text>
         </View>
+
+        {familyMembers.length > 1 ? (
+          <View style={styles.personSwitcher} accessibilityRole="tablist">
+            <Pressable
+              onPress={() => setSelectedMealMemberId('all')}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: showingEveryone }}
+              accessibilityLabel="Bekijk de weekplanning van iedereen"
+              style={({ pressed }) => [
+                styles.personSwitcherOption,
+                showingEveryone && styles.personSwitcherOptionSelected,
+                pressed && styles.pressed,
+              ]}>
+              <View
+                style={[
+                  styles.personSwitcherInitial,
+                  showingEveryone && styles.personSwitcherInitialSelected,
+                ]}>
+                <AppIcon
+                  name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                  tintColor={palette.sageDark}
+                  size={12}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.personSwitcherText,
+                  showingEveryone && styles.personSwitcherTextSelected,
+                ]}>
+                Iedereen
+              </Text>
+            </Pressable>
+            {familyMembers.map((member) => {
+              const selected = member.id === activeMealMemberId;
+              const isCurrentMember = member.id === currentMember?.id;
+              const name = mealMemberName(member.name);
+              return (
+                <Pressable
+                  key={member.id}
+                  onPress={() => setSelectedMealMemberId(member.id)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`Bekijk de weekplanning van ${name}`}
+                  style={({ pressed }) => [
+                    styles.personSwitcherOption,
+                    selected && styles.personSwitcherOptionSelected,
+                    pressed && styles.pressed,
+                  ]}>
+                  <View
+                    style={[
+                      styles.personSwitcherInitial,
+                      selected && styles.personSwitcherInitialSelected,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.personSwitcherInitialText,
+                        selected && styles.personSwitcherInitialTextSelected,
+                      ]}>
+                      {name.charAt(0)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.personSwitcherText,
+                      selected && styles.personSwitcherTextSelected,
+                      showingEveryone && isCurrentMember && styles.personSwitcherTextCurrent,
+                    ]}>
+                    {name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         <View style={styles.weekList}>
           {weekDays.map((day, index) => {
-              const recipe = getRecipe(plannedMeals[day.isoDate]);
-              const leftoverFrom = leftoverMeals[day.isoDate];
+              const dayPlans = mealPlans[day.isoDate] ?? [];
+              const dayRecipes = dayPlans.flatMap((plan) => {
+                const plannedRecipe = getRecipe(plan.recipeId);
+                return plannedRecipe ? [{ plan, recipe: plannedRecipe }] : [];
+              });
+              const memberPlan = showingEveryone
+                ? dayPlans[0]
+                : activeMealMemberId
+                ? dayPlans.find((plan) => plan.memberIds.includes(activeMealMemberId))
+                : dayPlans[0];
+              const recipe = getRecipe(
+                memberPlan?.recipeId ??
+                  (dayPlans.length === 0 ? plannedMeals[day.isoDate] : undefined),
+              );
+              const leftoverFrom = memberPlan?.leftoverFrom ?? leftoverMeals[day.isoDate];
               const leftoverSourceDay = leftoverFrom
                 ? weekDays.find((candidate) => candidate.isoDate === leftoverFrom)
                 : undefined;
               const selected = day.isoDate === selectedDay.isoDate;
               const isPast = day.isoDate < todayIso;
+              const multipleRecipes = showingEveryone && dayRecipes.length > 1;
+              const assignmentLabels = dayRecipes.map(({ plan, recipe: plannedRecipe }) => {
+                const memberNames = familyMembers
+                  .filter((member) => plan.memberIds.includes(member.id))
+                  .map((member) => mealMemberName(member.name));
+                const people =
+                  familyMembers.length > 0 && memberNames.length === familyMembers.length
+                    ? 'Iedereen'
+                    : memberNames.join(' en ') || 'Nog niemand';
+                return `${people} · ${plannedRecipe.title}`;
+              });
               const absentMembers = familyMembers.filter(
                 (member) => mealAttendance[day.isoDate]?.[member.id] === false,
               );
-              const currentMemberIsAbsent = currentMember
-                ? mealAttendance[day.isoDate]?.[currentMember.id] === false
+              const activeMemberIsAbsent = activeMealMemberId
+                ? mealAttendance[day.isoDate]?.[activeMealMemberId] === false
                 : false;
-              const eatingCount = familyMembers.length - absentMembers.length;
-              const attendanceSummary = currentMemberIsAbsent
-                ? 'Jij eet niet mee'
-                : absentMembers.length === 0
+              const attendanceSummary = showingEveryone
+                ? absentMembers.length === 0
                   ? 'Iedereen eet mee'
-                  : `${eatingCount} van ${familyMembers.length} eten mee`;
+                  : `${familyMembers.length - absentMembers.length} van ${familyMembers.length} eten mee`
+                : activeMemberIsAbsent
+                  ? `${activeMealMemberName} eet niet mee`
+                  : `${activeMealMemberName} eet mee`;
+              const attendanceIsImportant = showingEveryone
+                ? absentMembers.length > 0
+                : activeMemberIsAbsent;
               return (
                 <View
                   key={day.isoDate}
@@ -284,118 +456,251 @@ export default function WeekScreen() {
                       <Text style={styles.weekRowDateText}>{day.date} {day.monthShort}</Text>
                     </Pressable>
                     <Pressable
-                      onPress={() => {
-                        if (recipe) {
-                          openRecipe(day, recipe.id);
-                          return;
+                        onPress={() => {
+                          if (multipleRecipes) {
+                            setSelectedDayId(day.isoDate);
+                            return;
+                          }
+                          if (recipe) {
+                            openRecipe(day, recipe.id);
+                            return;
+                          }
+                          setSelectedDayId(day.isoDate);
+                          openPlanner(day);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          multipleRecipes
+                            ? `${day.label}: ${assignmentLabels.join('. ')}`
+                            : recipe
+                            ? `Open details van ${recipe.title}`
+                            : `Plan een gerecht voor ${day.label}`
                         }
-                        setSelectedDayId(day.isoDate);
-                        openPlanner(day);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        recipe
-                          ? `Open details van ${recipe.title}`
-                          : `Plan een gerecht voor ${day.label}`
-                      }
-                      style={({ pressed }) => [styles.weekRecipeLink, pressed && styles.pressed]}>
-                      {recipe ? (
-                        <RecipeImage recipe={recipe} style={styles.weekRowImage} />
-                      ) : (
-                        <View style={styles.weekRowPlus}>
-                          <AppIcon
-                            name={{ ios: 'plus', android: 'add', web: 'add' }}
-                            tintColor={palette.sageDark}
-                            size={17}
-                          />
-                        </View>
-                      )}
-                      <View style={styles.weekRowCopy}>
-                        <Text style={[styles.weekRowTitle, !recipe && styles.weekRowTitleEmpty]} numberOfLines={1}>
-                          {recipe?.title ?? (selected ? 'Nog niets gepland' : 'Gerecht kiezen')}
-                        </Text>
-                        {recipe ? (
-                          <Text
-                            style={[
-                              styles.weekRowMeta,
-                              currentMemberIsAbsent && styles.weekRowMetaImportant,
-                            ]}
-                            numberOfLines={1}>
-                            {leftoverFrom
-                              ? `Restje van ${leftoverSourceDay?.label.toLowerCase() ?? 'eerder'} · ${attendanceSummary.toLowerCase()}`
-                              : `${recipe.minutes} min · ${attendanceSummary.toLowerCase()}`}
-                          </Text>
+                        style={({ pressed }) => [styles.weekRecipeLink, pressed && styles.pressed]}>
+                        {multipleRecipes ? (
+                          <View style={styles.weekRowImageStack}>
+                            {dayRecipes.slice(0, 2).map(({ plan, recipe: plannedRecipe }, imageIndex) => (
+                              <RecipeImage
+                                key={plan.id}
+                                recipe={plannedRecipe}
+                                style={[
+                                  styles.weekRowStackedImage,
+                                  imageIndex > 0 && styles.weekRowStackedImageOverlap,
+                                ]}
+                              />
+                            ))}
+                          </View>
+                        ) : recipe ? (
+                          <RecipeImage recipe={recipe} style={styles.weekRowImage} />
                         ) : (
-                          <Text style={styles.weekRowMeta}>
-                            {selected ? 'Kies een gerecht voor deze dag' : 'Nog niets gepland'}
-                          </Text>
+                          <View style={styles.weekRowPlus}>
+                            <AppIcon
+                              name={{ ios: 'plus', android: 'add', web: 'add' }}
+                              tintColor={palette.sageDark}
+                              size={17}
+                            />
+                          </View>
                         )}
-                      </View>
-                      <AppIcon
-                        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                        tintColor={palette.textSoft}
-                        size={17}
-                      />
-                    </Pressable>
+                        <View style={styles.weekRowCopy}>
+                          <Text style={[styles.weekRowTitle, !recipe && styles.weekRowTitleEmpty]} numberOfLines={1}>
+                            {multipleRecipes
+                              ? assignmentLabels[0]
+                              : recipe?.title ?? (selected ? 'Nog niets gepland' : 'Gerecht kiezen')}
+                          </Text>
+                          {multipleRecipes ? (
+                            <Text style={styles.weekRowMeta} numberOfLines={1}>
+                              {assignmentLabels.slice(1).join(' · ')}
+                            </Text>
+                          ) : recipe ? (
+                            <Text
+                              style={[
+                                styles.weekRowMeta,
+                                activeMemberIsAbsent && styles.weekRowMetaImportant,
+                              ]}
+                              numberOfLines={1}>
+                              {leftoverFrom
+                                ? `Restje van ${leftoverSourceDay?.label.toLowerCase() ?? 'eerder'} · voor ${activeMealMemberName}`
+                                : `${recipe.minutes} min · voor ${activeMealMemberName}`}
+                            </Text>
+                          ) : (
+                            <Text style={styles.weekRowMeta}>
+                              {selected
+                                ? `Kies een gerecht voor ${activeMealMemberName}`
+                                : `Nog niets voor ${activeMealMemberName}`}
+                            </Text>
+                          )}
+                        </View>
+                        <AppIcon
+                          name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                          tintColor={palette.textSoft}
+                          size={17}
+                        />
+                      </Pressable>
+                    {recipe && familyMembers.length > 0 ? (
+                      <Pressable
+                        onPress={() =>
+                          router.push({
+                            pathname: '/meal-attendance',
+                            params: { dayId: day.isoDate },
+                          })
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`${attendanceSummary}. Aanwezigheid wijzigen voor ${day.label}`}
+                        hitSlop={6}
+                        style={({ pressed }) => [
+                          styles.weekAttendanceButton,
+                          attendanceIsImportant && styles.weekAttendanceButtonImportant,
+                          pressed && styles.pressed,
+                        ]}>
+                        <AppIcon
+                          name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
+                          tintColor={attendanceIsImportant ? palette.danger : palette.sageDark}
+                          size={17}
+                        />
+                      </Pressable>
+                    ) : null}
                   </View>
                   {selected ? (
                     <>
                       {recipe ? (
-                        <View style={styles.selectedRowActions}>
-                          {familyMembers.length > 0 ? (
-                            <Pressable
-                              onPress={() =>
-                                router.push({
-                                  pathname: '/meal-attendance',
-                                  params: { dayId: day.isoDate },
-                                })
-                              }
-                              accessibilityRole="button"
-                              accessibilityLabel={`${attendanceSummary}. Aanwezigheid wijzigen voor ${day.label}`}
-                              style={({ pressed }) => [
-                                styles.attendanceAction,
-                                currentMemberIsAbsent && styles.attendanceActionImportant,
-                                pressed && styles.pressed,
-                              ]}>
-                              <AppIcon
-                                name={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
-                                tintColor={
-                                  currentMemberIsAbsent ? palette.danger : palette.sageDark
+                        <>
+                          {multipleRecipes ? (
+                            <View style={styles.multipleMealActions}>
+                              <Text style={styles.multipleMealActionsTitle}>
+                                Kies een gerecht om te verwijderen
+                              </Text>
+                              {dayRecipes.map(({ plan, recipe: plannedRecipe }) => {
+                                const assignedNames = familyMembers
+                                  .filter((member) => plan.memberIds.includes(member.id))
+                                  .map((member) => mealMemberName(member.name));
+                                const assignedTo =
+                                  assignedNames.length === familyMembers.length
+                                    ? 'Iedereen'
+                                    : assignedNames.join(' en ') || 'Nog niemand';
+                                return (
+                                  <View key={plan.id} style={styles.multipleMealActionRow}>
+                                    <Pressable
+                                      onPress={() => openRecipe(day, plannedRecipe.id)}
+                                      accessibilityRole="button"
+                                      accessibilityLabel={`Open ${plannedRecipe.title}`}
+                                      style={({ pressed }) => [
+                                        styles.multipleMealRecipe,
+                                        pressed && styles.pressed,
+                                      ]}>
+                                      <RecipeImage
+                                        recipe={plannedRecipe}
+                                        style={styles.multipleMealImage}
+                                      />
+                                      <View style={styles.multipleMealCopy}>
+                                        <Text style={styles.multipleMealTitle} numberOfLines={1}>
+                                          {plannedRecipe.title}
+                                        </Text>
+                                        <Text style={styles.multipleMealMeta} numberOfLines={1}>
+                                          {assignedTo}
+                                        </Text>
+                                      </View>
+                                    </Pressable>
+                                    <Pressable
+                                      onPress={() =>
+                                        confirmRemove({
+                                          day,
+                                          mealPlanId: plan.id,
+                                          memberIds: plan.memberIds,
+                                          recipeTitle: plannedRecipe.title,
+                                        })
+                                      }
+                                      accessibilityRole="button"
+                                      accessibilityLabel={`${plannedRecipe.title} uit de weekplanning van ${day.label} halen`}
+                                      hitSlop={6}
+                                      style={({ pressed }) => [
+                                        styles.multipleMealRemove,
+                                        pressed && styles.pressed,
+                                      ]}>
+                                      <AppIcon
+                                        name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                                        tintColor={palette.danger}
+                                        size={17}
+                                      />
+                                    </Pressable>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          ) : null}
+                          <View style={styles.selectedRowActions}>
+                            {familyMembers.length > 0 ? (
+                              <Pressable
+                                onPress={() =>
+                                  router.push({
+                                    pathname: '/meal-attendance',
+                                    params: { dayId: day.isoDate },
+                                  })
                                 }
-                                size={16}
-                              />
-                              <Text
-                                style={[
-                                  styles.attendanceActionText,
-                                  currentMemberIsAbsent && styles.attendanceActionTextImportant,
-                                ]}
-                                numberOfLines={1}>
-                                {attendanceSummary}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${attendanceSummary}. Aanwezigheid wijzigen voor ${day.label}`}
+                                style={({ pressed }) => [
+                                  styles.attendanceAction,
+                                  attendanceIsImportant && styles.attendanceActionImportant,
+                                  pressed && styles.pressed,
+                                ]}>
+                                <AppIcon
+                                  name={
+                                    showingEveryone
+                                      ? { ios: 'person.2.fill', android: 'group', web: 'group' }
+                                      : { ios: 'person.fill', android: 'person', web: 'person' }
+                                  }
+                                  tintColor={
+                                    attendanceIsImportant ? palette.danger : palette.sageDark
+                                  }
+                                  size={16}
+                                />
+                                <Text
+                                  style={[
+                                    styles.attendanceActionText,
+                                    attendanceIsImportant && styles.attendanceActionTextImportant,
+                                  ]}
+                                  numberOfLines={1}>
+                                  {attendanceSummary}
+                                </Text>
+                              </Pressable>
+                            ) : (
+                              <View style={styles.actionSpacer} />
+                            )}
+                            {multipleRecipes ? null : (
+                              <Pressable
+                                onPress={() =>
+                                  confirmRemove({
+                                    day,
+                                    mealPlanId: memberPlan?.id,
+                                    memberIds: memberPlan?.memberIds,
+                                    recipeTitle: recipe.title,
+                                  })
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel={`${recipe.title} uit de weekplanning van ${day.label} halen`}
+                                hitSlop={6}
+                                style={({ pressed }) => [
+                                  styles.removeLink,
+                                  pressed && styles.pressed,
+                                ]}>
+                                <AppIcon
+                                  name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                                  tintColor={palette.textMuted}
+                                  size={17}
+                                />
+                              </Pressable>
+                            )}
+                            <Pressable
+                              onPress={() => openPlanner(day, true)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${multipleRecipes ? 'Wijzig de gerechten' : 'Kies een ander gerecht'} voor ${day.label}`}
+                              style={({ pressed }) => [styles.changeButton, pressed && styles.pressed]}>
+                              <Text style={styles.changeButtonText}>
+                                {multipleRecipes ? 'Planning wijzigen' : 'Gerecht wijzigen'}
                               </Text>
                             </Pressable>
-                          ) : (
-                            <View style={styles.actionSpacer} />
-                          )}
-                          <Pressable
-                            onPress={confirmRemove}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${recipe.title} uit de weekplanning van ${day.label} halen`}
-                            hitSlop={6}
-                            style={({ pressed }) => [styles.removeLink, pressed && styles.pressed]}>
-                            <AppIcon
-                              name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                              tintColor={palette.textMuted}
-                              size={17}
-                            />
-                          </Pressable>
-                          <Pressable
-                            onPress={() => openPlanner(day)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Kies een ander gerecht voor ${day.label}`}
-                            style={({ pressed }) => [styles.changeButton, pressed && styles.pressed]}>
-                            <Text style={styles.changeButtonText}>Ander gerecht</Text>
-                          </Pressable>
-                        </View>
+                          </View>
+                        </>
                       ) : (
                         <Pressable
                           onPress={() => openPlanner(day)}
@@ -570,6 +875,40 @@ const styles = StyleSheet.create({
   },
   listTitle: { color: palette.text, fontSize: 19, fontWeight: '700' },
   listMeta: { color: palette.textSoft, fontSize: 12, fontWeight: '600' },
+  personSwitcher: {
+    alignSelf: 'flex-start',
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: spacing.sm,
+    padding: 3,
+  },
+  personSwitcherOption: {
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  personSwitcherOptionSelected: { backgroundColor: palette.sageDark },
+  personSwitcherInitial: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.pill,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  personSwitcherInitialSelected: { backgroundColor: palette.white },
+  personSwitcherInitialText: { color: palette.sageDark, fontSize: 10, fontWeight: '800' },
+  personSwitcherInitialTextSelected: { color: palette.sageDark },
+  personSwitcherText: { color: palette.textMuted, fontSize: 12, fontWeight: '600' },
+  personSwitcherTextCurrent: { fontWeight: '800' },
+  personSwitcherTextSelected: { color: palette.white, fontWeight: '700' },
   weekList: {
     backgroundColor: palette.surface,
     borderRadius: radius.lg,
@@ -598,6 +937,19 @@ const styles = StyleSheet.create({
   weekRowDaySelected: { color: palette.sageDark, fontWeight: '800' },
   weekRowDateText: { color: palette.textMuted, fontSize: 11, marginTop: 3 },
   weekRowImage: { borderRadius: radius.pill, height: 38, width: 38 },
+  weekRowImageStack: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    width: 50,
+  },
+  weekRowStackedImage: {
+    borderColor: palette.surface,
+    borderRadius: radius.pill,
+    borderWidth: 2,
+    height: 34,
+    width: 34,
+  },
+  weekRowStackedImageOverlap: { marginLeft: -18 },
   weekRowPlus: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
@@ -607,11 +959,61 @@ const styles = StyleSheet.create({
     width: 38,
   },
   weekRecipeLink: { alignItems: 'center', flex: 1, flexDirection: 'row', minHeight: 50 },
+  weekAttendanceButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    marginLeft: spacing.xs,
+    width: 38,
+  },
+  weekAttendanceButtonImportant: { backgroundColor: '#F4E5E3' },
   weekRowCopy: { flex: 1, marginHorizontal: spacing.md },
   weekRowTitle: { color: palette.text, fontSize: 14, fontWeight: '700' },
   weekRowTitleEmpty: { color: palette.sageDark },
   weekRowMeta: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
   weekRowMetaImportant: { color: palette.danger, fontWeight: '800' },
+  multipleMealActions: {
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    gap: spacing.xs,
+    marginHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  multipleMealActionsTitle: {
+    color: palette.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: spacing.sm,
+  },
+  multipleMealActionRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 46,
+  },
+  multipleMealRecipe: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  multipleMealImage: { borderRadius: radius.pill, height: 32, width: 32 },
+  multipleMealCopy: { flex: 1, marginLeft: spacing.sm },
+  multipleMealTitle: { color: palette.text, fontSize: 12, fontWeight: '700' },
+  multipleMealMeta: { color: palette.textMuted, fontSize: 10, marginTop: 2 },
+  multipleMealRemove: {
+    alignItems: 'center',
+    borderColor: palette.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+    width: 36,
+  },
   selectedRowActions: {
     alignItems: 'center',
     borderTopColor: palette.border,

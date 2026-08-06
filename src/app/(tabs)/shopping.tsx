@@ -13,7 +13,12 @@ import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
-import { jumboDepartments, type Department } from '@/data/mock-data';
+import {
+  dateToIso,
+  getWeekRangeLabel,
+  jumboDepartments,
+  type Department,
+} from '@/data/mock-data';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { type ShoppingItem, useMealMate } from '@/state/meal-mate-provider';
 
@@ -37,15 +42,26 @@ export default function ShoppingScreen() {
     completedShoppingIds,
     recipes,
     plannedMeals,
+    mealPlans,
     weekDays,
+    changeWeek,
     toggleShoppingItem,
   } = useMealMate();
   const [groupMode, setGroupMode] = useState<GroupMode>('department');
   const [showCompleted, setShowCompleted] = useState(true);
+  const [isChangingWeek, setIsChangingWeek] = useState(false);
   const completedCount = completedShoppingIds.filter((id) =>
     shoppingItems.some((item) => item.id === id),
   ).length;
   const completedItemsLabel = `${completedCount} afgevinkte ${completedCount === 1 ? 'product' : 'producten'}`;
+  const todayIso = dateToIso(new Date());
+  const hasPastMeal = weekDays.some(
+    (day) => day.isoDate < todayIso && (mealPlans[day.isoDate] ?? []).length > 0,
+  );
+  const hasCurrentOrFutureMeal = weekDays.some(
+    (day) => day.isoDate >= todayIso && (mealPlans[day.isoDate] ?? []).length > 0,
+  );
+  const onlyHasPastMeals = hasPastMeal && !hasCurrentOrFutureMeal;
 
   const toggleItem = async (item: ShoppingItem) => {
     const wasCompleted = completedShoppingIds.includes(item.id);
@@ -55,6 +71,19 @@ export default function ShoppingScreen() {
       return;
     }
     mealMateHaptics.selection();
+  };
+
+  const selectAdjacentWeek = async (direction: -1 | 1) => {
+    if (isChangingWeek) return;
+    setIsChangingWeek(true);
+    try {
+      await changeWeek(direction);
+      setShowCompleted(true);
+    } catch (error) {
+      if (__DEV__) console.warn('Tably shopping week change failed', error);
+    } finally {
+      setIsChangingWeek(false);
+    }
   };
 
   const sections = useMemo(() => {
@@ -95,8 +124,14 @@ export default function ShoppingScreen() {
 
     const recipeOrder = new Map<string, number>();
     weekDays.forEach((day, index) => {
-      const title = recipes.find((recipe) => recipe.id === plannedMeals[day.isoDate])?.title;
-      if (title && !recipeOrder.has(title)) recipeOrder.set(title, index);
+      const recipeIds = (mealPlans[day.isoDate] ?? []).map((plan) => plan.recipeId);
+      if (recipeIds.length === 0 && plannedMeals[day.isoDate]) {
+        recipeIds.push(plannedMeals[day.isoDate] as string);
+      }
+      recipeIds.forEach((recipeId) => {
+        const title = recipes.find((recipe) => recipe.id === recipeId)?.title;
+        if (title && !recipeOrder.has(title)) recipeOrder.set(title, index);
+      });
     });
 
     return Array.from(grouped, ([title, data]) => ({ title, data })).sort(
@@ -104,7 +139,7 @@ export default function ShoppingScreen() {
         (recipeOrder.get(a.title) ?? Number.MAX_SAFE_INTEGER) -
         (recipeOrder.get(b.title) ?? Number.MAX_SAFE_INTEGER),
     );
-  }, [completedShoppingIds, groupMode, plannedMeals, recipes, shoppingItems, showCompleted, weekDays]);
+  }, [completedShoppingIds, groupMode, mealPlans, plannedMeals, recipes, shoppingItems, showCompleted, weekDays]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -125,6 +160,42 @@ export default function ShoppingScreen() {
               subtitle="Per product zie je voor welk gerecht het nodig is. Handig bij vervangen in de winkel."
             />
             <View style={styles.toolbarCard}>
+              <View style={styles.weekRow}>
+                <Pressable
+                  onPress={() => void selectAdjacentWeek(-1)}
+                  disabled={isChangingWeek}
+                  accessibilityRole="button"
+                  accessibilityLabel="Vorige boodschappenweek"
+                  style={({ pressed }) => [
+                    styles.weekButton,
+                    (pressed || isChangingWeek) && styles.pressed,
+                  ]}>
+                  <AppIcon
+                    name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+                    tintColor={palette.sageDark}
+                    size={18}
+                  />
+                </Pressable>
+                <View style={styles.weekCopy}>
+                  <Text style={styles.weekEyebrow}>BOODSCHAPPENWEEK</Text>
+                  <Text style={styles.weekLabel}>{getWeekRangeLabel(weekDays)}</Text>
+                </View>
+                <Pressable
+                  onPress={() => void selectAdjacentWeek(1)}
+                  disabled={isChangingWeek}
+                  accessibilityRole="button"
+                  accessibilityLabel="Volgende boodschappenweek"
+                  style={({ pressed }) => [
+                    styles.weekButton,
+                    (pressed || isChangingWeek) && styles.pressed,
+                  ]}>
+                  <AppIcon
+                    name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+                    tintColor={palette.sageDark}
+                    size={18}
+                  />
+                </Pressable>
+              </View>
               <View style={styles.progressRow}>
                 <Text style={styles.progressTitle}>
                   {completedCount}/{shoppingItems.length} afgevinkt
@@ -232,12 +303,18 @@ export default function ShoppingScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>
-              {shoppingItems.length ? 'Alles is afgevinkt' : 'De lijst is nog leeg'}
+              {shoppingItems.length
+                ? 'Alles is afgevinkt'
+                : onlyHasPastMeals
+                  ? 'De geplande gerechten zijn geweest'
+                  : 'De lijst is nog leeg'}
             </Text>
             <Text style={styles.emptyText}>
               {shoppingItems.length
                 ? 'Toon afgestreepte producten om ze weer te bekijken.'
-                : 'Plan een gerecht om ingrediënten toe te voegen.'}
+                : onlyHasPastMeals
+                  ? 'De bijbehorende ingrediënten zijn automatisch van deze lijst gehaald.'
+                  : 'Plan een gerecht om ingrediënten toe te voegen.'}
             </Text>
           </View>
         }
@@ -346,6 +423,27 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     padding: spacing.md,
   },
+  weekRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    paddingBottom: spacing.xs,
+  },
+  weekButton: {
+    alignItems: 'center',
+    backgroundColor: palette.sageSoft,
+    borderRadius: radius.pill,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  weekCopy: { alignItems: 'center', flex: 1 },
+  weekEyebrow: {
+    color: palette.textSoft,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  weekLabel: { color: palette.text, fontSize: 16, fontWeight: '800', marginTop: 2 },
   progressRow: { alignItems: 'center', flexDirection: 'row' },
   progressTitle: { color: palette.text, fontSize: 13, fontWeight: '700' },
   progressTrack: {

@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     height: MEAL_MATE_TAB_BAR_HEIGHT,
     marginHorizontal: 12,
-    shadowColor: '#20201F',
+    shadowColor: '#123D35',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 18,
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
   },
   itemActive: {
-    backgroundColor: 'rgba(255, 240, 230, 0.88)',
+    backgroundColor: palette.sageSoft,
   },
   itemPressed: {
     opacity: 0.7,

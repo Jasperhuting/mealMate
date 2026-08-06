@@ -12,7 +12,7 @@ import { useMealMate } from '@/state/meal-mate-provider';
 export default function FamilyScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { familyMembers, ratings, recipes, plannedMeals, weekDays, getRecipe, mealAttendance } = useMealMate();
+  const { familyMembers, ratings, recipes, plannedMeals, mealPlans, weekDays, getRecipe, mealAttendance } = useMealMate();
   const hasFamilyMembers = familyMembers.length > 0;
 
   return (
@@ -120,12 +120,28 @@ export default function FamilyScreen() {
         <Text style={styles.sectionTitle}>Deze week samen</Text>
         <View style={styles.timelineCard}>
           {weekDays
-            .filter((day) => plannedMeals[day.isoDate])
+            .filter((day) => (mealPlans[day.isoDate] ?? []).length > 0 || plannedMeals[day.isoDate])
             .map((day, index, plannedDays) => {
-              const recipe = getRecipe(plannedMeals[day.isoDate]);
-              const absentMembers = familyMembers.filter(
-                (member) => mealAttendance[day.isoDate]?.[member.id] === false,
+              const dayPlans = mealPlans[day.isoDate] ?? [];
+              const mealSummary = dayPlans.length > 0
+                ? dayPlans.map((plan) => getRecipe(plan.recipeId)?.title).filter(Boolean).join(' · ')
+                : getRecipe(plannedMeals[day.isoDate])?.title;
+              const assignedMemberIds = new Set(
+                dayPlans.flatMap((plan) => plan.memberIds),
               );
+              const eatingMembers = familyMembers.filter(
+                (member) =>
+                  mealAttendance[day.isoDate]?.[member.id] !== false &&
+                  (dayPlans.length === 0 || assignedMemberIds.has(member.id)),
+              );
+              const attendanceSummary =
+                eatingMembers.length === 0
+                  ? 'Niemand eet mee'
+                  : eatingMembers.length === familyMembers.length
+                    ? 'Iedereen eet mee'
+                    : eatingMembers.length === 1
+                      ? `${eatingMembers[0].name} eet mee`
+                      : `${eatingMembers.length} van ${familyMembers.length} eten mee`;
               return (
                 <View key={day.id} style={styles.timelineRow}>
                   <View style={styles.timelineRail}>
@@ -134,12 +150,8 @@ export default function FamilyScreen() {
                   </View>
                   <View style={styles.timelineCopy}>
                     <Text style={styles.timelineDay}>{day.label}</Text>
-                    <Text style={styles.timelineMeal}>{recipe?.title}</Text>
-                    <Text style={styles.timelineAttendance}>
-                      {absentMembers.length > 0
-                        ? `${absentMembers.map((member) => member.name).join(', ')} eet niet mee`
-                        : 'Iedereen eet mee'}
-                    </Text>
+                    <Text style={styles.timelineMeal}>{mealSummary}</Text>
+                    <Text style={styles.timelineAttendance}>{attendanceSummary}</Text>
                   </View>
                   <AppIcon
                     name={{ ios: 'person.2.fill', android: 'groups', web: 'groups' }}

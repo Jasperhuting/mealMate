@@ -8,10 +8,12 @@ import {
   font,
   foregroundStyle,
   frame,
+  layoutPriority,
   lineLimit,
   minimumScaleFactor,
   padding,
   resizable,
+  truncationMode,
 } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 
@@ -73,7 +75,10 @@ const HomeMealPlanWidget = (
           <Text
             modifiers={[
               font({ size: 11, weight: 'bold', design: 'rounded' }),
-              foregroundStyle(props.primaryImageUri ? '#FFFFFF' : '#195C44'),
+              foregroundStyle(props.primaryImageUri ? '#FFFFFF' : '#0F6F58'),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(1),
+              truncationMode('tail'),
             ]}>
             {props.primaryLabel.toUpperCase()}
           </Text>
@@ -82,9 +87,11 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 20, weight: 'bold', design: 'rounded' }),
               foregroundStyle(props.primaryImageUri ? '#FFFFFF' : '#18332A'),
-              lineLimit(),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(2),
               minimumScaleFactor(0.55),
               allowsTightening(true),
+              truncationMode('tail'),
             ]}>
             {props.primaryTitle}
           </Text>
@@ -92,6 +99,9 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 11, weight: 'medium' }),
               foregroundStyle(props.primaryImageUri ? '#FFFFFFCC' : '#527064'),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(1),
+              truncationMode('tail'),
             ]}>
             Op het menu
           </Text>
@@ -108,11 +118,15 @@ const HomeMealPlanWidget = (
         containerBackground('#E8F0E9', 'widget'),
         frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: 'leading' }),
         padding({ all: 12 }),
+        clipped(),
       ]}>
       <Text
         modifiers={[
           font({ size: 12, weight: 'bold', design: 'rounded' }),
-          foregroundStyle('#195C44'),
+          foregroundStyle('#0F6F58'),
+          frame({ maxWidth: Infinity, alignment: 'leading' }),
+          lineLimit(1),
+          truncationMode('tail'),
         ]}>
         TABLY · OP HET MENU
       </Text>
@@ -123,7 +137,11 @@ const HomeMealPlanWidget = (
         <VStack
           alignment="leading"
           spacing={4}
-          modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+          modifiers={[
+            frame({ minWidth: 0, maxWidth: Infinity, alignment: 'leading' }),
+            layoutPriority(1),
+            clipped(),
+          ]}>
           {props.primaryImageUri && (
             <Image
               uiImage={props.primaryImageUri}
@@ -140,6 +158,9 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 11, weight: 'semibold' }),
               foregroundStyle('#527064'),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(1),
+              truncationMode('tail'),
             ]}>
             {props.primaryLabel}
           </Text>
@@ -147,9 +168,11 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 15, weight: 'bold', design: 'rounded' }),
               foregroundStyle('#18332A'),
-              lineLimit(),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(2),
               minimumScaleFactor(0.55),
               allowsTightening(true),
+              truncationMode('tail'),
             ]}>
             {props.primaryTitle}
           </Text>
@@ -158,7 +181,11 @@ const HomeMealPlanWidget = (
         <VStack
           alignment="leading"
           spacing={4}
-          modifiers={[frame({ maxWidth: Infinity, alignment: 'leading' })]}>
+          modifiers={[
+            frame({ minWidth: 0, maxWidth: Infinity, alignment: 'leading' }),
+            layoutPriority(1),
+            clipped(),
+          ]}>
           {props.secondaryImageUri && (
             <Image
               uiImage={props.secondaryImageUri}
@@ -175,6 +202,9 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 11, weight: 'semibold' }),
               foregroundStyle('#527064'),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(1),
+              truncationMode('tail'),
             ]}>
             {props.secondaryLabel}
           </Text>
@@ -182,9 +212,11 @@ const HomeMealPlanWidget = (
             modifiers={[
               font({ size: 15, weight: 'bold', design: 'rounded' }),
               foregroundStyle('#18332A'),
-              lineLimit(),
+              frame({ maxWidth: Infinity, alignment: 'leading' }),
+              lineLimit(2),
               minimumScaleFactor(0.55),
               allowsTightening(true),
+              truncationMode('tail'),
             ]}>
             {props.secondaryTitle}
           </Text>
