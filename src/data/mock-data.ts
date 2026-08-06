@@ -51,6 +51,7 @@ export type Ingredient = {
 export type Recipe = {
   id: string;
   clientKey?: string;
+  createdAt?: string;
   title: string;
   subtitle: string;
   minutes: number;

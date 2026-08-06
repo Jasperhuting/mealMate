@@ -14,11 +14,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { BrandLogo } from '@/components/mealmate/brand-logo';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
+import { ProfileButton } from '@/components/mealmate/profile-button';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
-import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import { dateToIso, getWeekRangeLabel, type WeekDay } from '@/data/mock-data';
-import { getInitial, getUserInitial } from '@/lib/user-initial';
 import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 
@@ -30,7 +29,7 @@ const mealMemberName = (name: string) => {
 export default function WeekScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session, avatarUrl } = useAuth();
+  const { session } = useAuth();
   const {
     weekDays,
     plannedMeals,
@@ -87,8 +86,6 @@ export default function WeekScreen() {
       ? dayPlans.some((plan) => plan.memberIds.includes(activeMealMemberId))
       : dayPlans.length > 0;
   }).length;
-  const avatarInitial = getInitial(currentMember?.initials) ?? getUserInitial(session?.user);
-
   const openPlanner = (day: WeekDay, replaceCurrent = false) => {
     const dayPlans = mealPlans[day.isoDate] ?? [];
     const planToReplace = activeMealMemberId
@@ -192,14 +189,9 @@ export default function WeekScreen() {
               <Text style={styles.todayText}>Vandaag · {todayLabel}</Text>
             </View>
           </View>
-          <Pressable
-            onPress={() => router.push('/account')}
-            accessibilityRole="button"
-            accessibilityLabel="Open jouw account"
-            hitSlop={6}
-            style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}>
-            <UserAvatar initial={avatarInitial} size={38} uri={avatarUrl} />
-          </Pressable>
+          <View style={styles.profileSlot}>
+            <ProfileButton />
+          </View>
         </View>
 
         <View style={styles.weekPager}>
@@ -410,7 +402,11 @@ export default function WeekScreen() {
               const multipleRecipes = showingEveryone && dayRecipes.length > 1;
               const assignmentLabels = dayRecipes.map(({ plan, recipe: plannedRecipe }) => {
                 const memberNames = familyMembers
-                  .filter((member) => plan.memberIds.includes(member.id))
+                  .filter(
+                    (member) =>
+                      plan.memberIds.includes(member.id) &&
+                      mealAttendance[day.isoDate]?.[member.id] !== false,
+                  )
                   .map((member) => mealMemberName(member.name));
                 const people =
                   familyMembers.length > 0 && memberNames.length === familyMembers.length
@@ -434,6 +430,18 @@ export default function WeekScreen() {
               const attendanceIsImportant = showingEveryone
                 ? absentMembers.length > 0
                 : activeMemberIsAbsent;
+              const attendingMemberNames = familyMembers
+                .filter(
+                  (member) =>
+                    (memberPlan?.memberIds.includes(member.id) ?? true) &&
+                    mealAttendance[day.isoDate]?.[member.id] !== false,
+                )
+                .map((member) => mealMemberName(member.name));
+              const mealAudienceName = showingEveryone
+                ? familyMembers.length > 0 && attendingMemberNames.length === familyMembers.length
+                  ? 'iedereen'
+                  : attendingMemberNames.join(' en ') || 'niemand'
+                : activeMealMemberName;
               return (
                 <View
                   key={day.isoDate}
@@ -519,8 +527,8 @@ export default function WeekScreen() {
                               ]}
                               numberOfLines={1}>
                               {leftoverFrom
-                                ? `Restje van ${leftoverSourceDay?.label.toLowerCase() ?? 'eerder'} · voor ${activeMealMemberName}`
-                                : `${recipe.minutes} min · voor ${activeMealMemberName}`}
+                                ? `Restje van ${leftoverSourceDay?.label.toLowerCase() ?? 'eerder'} · voor ${mealAudienceName}`
+                                : `${recipe.minutes} min · voor ${mealAudienceName}`}
                             </Text>
                           ) : (
                             <Text style={styles.weekRowMeta}>
@@ -768,6 +776,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
+  profileSlot: { alignSelf: 'flex-start', marginTop: spacing.md },
   brandTagline: { color: palette.textMuted, fontSize: 10, fontWeight: '600', marginTop: 1 },
   todayLine: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 3 },
   todayDot: {
@@ -777,14 +786,6 @@ const styles = StyleSheet.create({
     width: 7,
   },
   todayText: { color: palette.textMuted, fontSize: 11, fontWeight: '600' },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: palette.surfaceStrong,
-    borderRadius: radius.pill,
-    height: 38,
-    justifyContent: 'center',
-    width: 38,
-  },
   weekPager: {
     alignItems: 'center',
     flexDirection: 'row',

@@ -16,22 +16,94 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
+import { ProfileButton } from '@/components/mealmate/profile-button';
 import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
-import type { Recipe } from '@/data/mock-data';
+import type { FamilyMember, Recipe } from '@/data/mock-data';
+import { normalizeIngredientPreferenceName } from '@/lib/ingredient-preferences';
 import { recipeMatchesFilters } from '@/lib/recipe-filters';
+import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 import { useRecipeFilters } from '@/state/recipe-filter-provider';
+
+const newlyAddedWindowMs = 24 * 60 * 60 * 1000;
+
+const wasAddedWithin24Hours = (createdAt?: string) => {
+  if (!createdAt) return false;
+  const age = Date.now() - new Date(createdAt).getTime();
+  return Number.isFinite(age) && age >= 0 && age < newlyAddedWindowMs;
+};
+
+type LinkedFamilyMember = FamilyMember & { linkedUserId: string };
+
+const hasLinkedUser = (member: FamilyMember): member is LinkedFamilyMember =>
+  Boolean(member.linkedUserId);
+
+const personInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toLocaleUpperCase('nl');
+
+const colorWithAlpha = (color: string, alpha: number) => {
+  const match = color.match(/^#([0-9a-f]{6})$/i);
+  if (!match) return palette.surfaceMuted;
+  const value = Number.parseInt(match[1], 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+};
 
 export default function RecipesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { recipes, ratings, familyMembers, hiddenRecipeIds, setRecipeHidden } = useMealMate();
+  const { session } = useAuth();
+  const currentUserId = session?.user.id;
+  const currentUserEmail = session?.user.email;
+  const currentUserDisplayName = session?.user.user_metadata.display_name as string | undefined;
+  const {
+    recipes,
+    ratings,
+    familyMembers,
+    hiddenRecipeIds,
+    dislikedIngredientNamesByUser,
+    setRecipeHidden,
+  } = useMealMate();
   const { filters, activeFilterCount, setFilters, clearFilters } = useRecipeFilters();
   const [query, setQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const isSearchActive = isSearchFocused || query.trim().length > 0;
+  const preferenceMembers: LinkedFamilyMember[] = (() => {
+    const linkedMembers = familyMembers.filter(hasLinkedUser);
+    if (!currentUserId || linkedMembers.some((member) => member.linkedUserId === currentUserId)) {
+      return linkedMembers;
+    }
+
+    const name = currentUserDisplayName
+      || currentUserEmail?.split('@')[0]
+      || 'Jij';
+    return [
+      ...linkedMembers,
+      {
+        id: `current-user-${currentUserId}`,
+        name,
+        initials: personInitials(name) || 'J',
+        color: palette.sageDark,
+        linkedUserId: currentUserId,
+      },
+    ];
+  })();
+  const dislikedIngredientSetsByUser = useMemo(
+    () => Object.fromEntries(
+      Object.entries(dislikedIngredientNamesByUser).map(([userId, names]) => [
+        userId,
+        new Set(names),
+      ]),
+    ) as Record<string, Set<string>>,
+    [dislikedIngredientNamesByUser],
+  );
   const filteredRecipes = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('nl');
     const hiddenIds = new Set(hiddenRecipeIds);
@@ -104,6 +176,10 @@ export default function RecipesScreen() {
     });
   };
 
+  const openRecipe = (recipe: Recipe) => {
+    router.push({ pathname: '/recipe-detail', params: { recipeId: recipe.id } });
+  };
+
   const toggleRecipeHidden = async (recipe: Recipe) => {
     const isHidden = hiddenRecipeIds.includes(recipe.id);
     try {
@@ -137,16 +213,19 @@ export default function RecipesScreen() {
                 title="Recepten"
                 subtitle="Bewaar wat jullie probeerden en onthoud wie welk gerecht lekker vond."
                 action={
-                  <Pressable
-                    onPress={() => router.push('/add-recipe')}
-                    accessibilityRole="button"
-                    accessibilityLabel="Nieuw recept toevoegen"
-                    style={styles.addButton}>
-                    <AppIcon
-                      name={{ ios: 'plus', android: 'add', web: 'add' }}
-                      tintColor={palette.white}
-                    />
-                  </Pressable>
+                  <View style={styles.headerActions}>
+                    <Pressable
+                      onPress={() => router.push('/add-recipe')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Nieuw recept toevoegen"
+                      style={styles.addButton}>
+                      <AppIcon
+                        name={{ ios: 'plus', android: 'add', web: 'add' }}
+                        tintColor={palette.white}
+                      />
+                    </Pressable>
+                    <ProfileButton />
+                  </View>
                 }
               />
             ) : null}
@@ -283,61 +362,89 @@ export default function RecipesScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         renderItem={({ item }) => {
           const isHidden = hiddenRecipeIds.includes(item.id);
+          const isNew = wasAddedWithin24Hours(item.createdAt);
+          const dislikedIngredients = item.ingredients.flatMap((ingredient, index, ingredients) => {
+            const normalizedName = normalizeIngredientPreferenceName(ingredient.name);
+            const isFirstOccurrence = ingredients.findIndex(
+              (candidate) =>
+                normalizeIngredientPreferenceName(candidate.name) === normalizedName,
+            ) === index;
+            if (!isFirstOccurrence) return [];
+
+            const members = preferenceMembers.filter((member) =>
+              dislikedIngredientSetsByUser[member.linkedUserId]?.has(normalizedName),
+            );
+            return members.length > 0 ? [{ ingredient, members }] : [];
+          });
           return (
             <View style={[styles.recipeCard, isHidden && styles.hiddenRecipeCard]}>
+              {isHidden ? (
+                <View style={styles.hiddenNotice}>
+                  <View style={styles.hiddenNoticeIcon}>
+                    <AppIcon
+                      name={{ ios: 'eye.slash.fill', android: 'visibility_off', web: 'visibility_off' }}
+                      tintColor={palette.white}
+                      size={16}
+                    />
+                  </View>
+                  <View style={styles.hiddenNoticeCopy}>
+                    <Text style={styles.hiddenNoticeTitle}>Verborgen voor jou</Text>
+                    <Text style={styles.hiddenNoticeText}>
+                      Dit gerecht verschijnt alleen wanneer je zoekt.
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
               <View style={styles.cardTop}>
                 <View style={styles.recipeMain}>
                   <RecipeImage recipe={item} style={styles.recipeImage} />
                   <View style={styles.recipeCopy}>
                     <View style={styles.recipeTitleRow}>
-                      <Text style={styles.recipeTitle}>{item.title}</Text>
-                      {isHidden ? (
-                        <View style={styles.hiddenBadge}>
-                          <AppIcon
-                            name={{
-                              ios: 'eye.slash',
-                              android: 'visibility_off',
-                              web: 'visibility_off',
-                            }}
-                            tintColor={palette.textMuted}
-                            size={12}
-                          />
-                          <Text style={styles.hiddenBadgeText}>Verborgen gerecht</Text>
+                      <Pressable
+                        onPress={() => openRecipe(item)}
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${item.title}`}
+                        hitSlop={4}
+                        style={({ pressed }) => [styles.recipeTitleLink, pressed && styles.pressed]}>
+                        <Text style={styles.recipeTitle}>{item.title}</Text>
+                        <AppIcon
+                          name={{
+                            ios: 'chevron.right',
+                            android: 'chevron_right',
+                            web: 'chevron_right',
+                          }}
+                          tintColor={palette.textSoft}
+                          size={13}
+                        />
+                      </Pressable>
+                      {isNew ? (
+                        <View style={styles.recipeBadges}>
+                          <View style={styles.newBadge}>
+                            <Text style={styles.newBadgeText}>Nieuw</Text>
+                          </View>
                         </View>
                       ) : null}
                     </View>
                     <Text style={styles.recipeMeta}>
                       {item.minutes} min · {item.ingredients.length} ingrediënten
                     </Text>
-                    <View style={styles.ratingRow}>
-                      {familyMembers.map((member) => (
-                        <View key={member.id} style={styles.ratingPill}>
-                          <Text style={styles.memberInitial}>{member.initials.slice(0, 1)}</Text>
-                          <Text style={styles.ratingText}>
-                            ★ {ratings[item.id]?.[member.id] ?? '–'}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
+                    {familyMembers.length > 0 ? (
+                      <View style={styles.ratingRow}>
+                        {familyMembers.map((member) => (
+                          <View key={member.id} style={styles.ratingPill}>
+                            <Text style={[styles.memberInitial, { color: member.color }]}>
+                              {member.initials.slice(0, 1)}
+                            </Text>
+                            <Text style={styles.ratingText}>
+                              ★ {ratings[item.id]?.[member.id] ?? '–'}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
                   </View>
                 </View>
                 <View style={styles.cardActions}>
-                  <Pressable
-                    onPress={() => void toggleRecipeHidden(item)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.title} ${isHidden ? 'weer tonen' : 'verbergen'}`}
-                    hitSlop={4}
-                    style={({ pressed }) => [styles.cardActionButton, pressed && styles.pressed]}>
-                    <AppIcon
-                      name={{
-                        ios: isHidden ? 'eye' : 'eye.slash',
-                        android: isHidden ? 'visibility' : 'visibility_off',
-                        web: isHidden ? 'visibility' : 'visibility_off',
-                      }}
-                      tintColor={palette.sageDark}
-                      size={18}
-                    />
-                  </Pressable>
                   <Pressable
                     onPress={() => editRecipe(item)}
                     accessibilityRole="button"
@@ -350,30 +457,86 @@ export default function RecipesScreen() {
                       size={18}
                     />
                   </Pressable>
+                  <Pressable
+                    onPress={() => void toggleRecipeHidden(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.title} ${isHidden ? 'weer tonen' : 'verbergen'}`}
+                    hitSlop={4}
+                    style={({ pressed }) => [
+                      styles.cardActionButton,
+                      isHidden && styles.hiddenCardActionButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <AppIcon
+                      name={{
+                        ios: isHidden ? 'eye' : 'eye.slash',
+                        android: isHidden ? 'visibility' : 'visibility_off',
+                        web: isHidden ? 'visibility' : 'visibility_off',
+                      }}
+                      tintColor={isHidden ? palette.white : palette.sageDark}
+                      size={18}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => openRating(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Beoordeel ${item.title}`}
+                    hitSlop={4}
+                    style={({ pressed }) => [styles.cardActionButton, pressed && styles.pressed]}>
+                    <AppIcon
+                      name={{ ios: 'star', android: 'star_outline', web: 'star_outline' }}
+                      tintColor={palette.sageDark}
+                      size={18}
+                    />
+                  </Pressable>
                 </View>
               </View>
-              {familyMembers.length > 0 ? (
-                <Pressable
-                  onPress={() => openRating(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Beoordeel ${item.title}`}
-                  style={({ pressed }) => [styles.ratingButton, pressed && styles.pressed]}>
-                  <AppIcon
-                    name={{ ios: 'star', android: 'star_outline', web: 'star_outline' }}
-                    tintColor={palette.sageDark}
-                    size={17}
-                  />
-                  <Text style={styles.ratingButtonText}>Beoordelen</Text>
-                  <AppIcon
-                    name={{
-                      ios: 'chevron.right',
-                      android: 'chevron_right',
-                      web: 'chevron_right',
-                    }}
-                    tintColor={palette.sageDark}
-                    size={16}
-                  />
-                </Pressable>
+              {dislikedIngredients.length > 0 ? (
+                <View style={styles.dislikedIngredientRow}>
+                  {dislikedIngredients.map(({ ingredient, members }) => {
+                    const includesCurrentUser = members.some(
+                      (member) => member.linkedUserId === currentUserId,
+                    );
+                    const isSharedPreference = members.length > 1;
+                    const accentColor = members[0].color;
+                    return (
+                      <View
+                        key={normalizeIngredientPreferenceName(ingredient.name)}
+                        accessible
+                        accessibilityLabel={`${ingredient.name} wordt niet gelust door ${members
+                          .map((member) => member.name)
+                          .join(' en ')}`}
+                        style={[
+                          styles.dislikedIngredientChip,
+                          {
+                            backgroundColor: isSharedPreference
+                              ? palette.surfaceMuted
+                              : includesCurrentUser
+                                ? colorWithAlpha(accentColor, 0.14)
+                                : palette.surface,
+                            borderColor: isSharedPreference ? palette.border : accentColor,
+                          },
+                        ]}>
+                        <View style={styles.dislikedMemberStack} accessibilityElementsHidden>
+                          {members.map((member, memberIndex) => (
+                            <View
+                              key={member.id}
+                              style={[
+                                styles.dislikedMemberInitial,
+                                { backgroundColor: member.color },
+                                memberIndex > 0 && styles.dislikedMemberInitialOverlap,
+                              ]}>
+                              <Text style={styles.dislikedMemberInitialText}>
+                                {member.initials.slice(0, 1)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                        <Text style={styles.dislikedIngredientText}>{ingredient.name}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
               ) : null}
             </View>
           );
@@ -386,6 +549,7 @@ export default function RecipesScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   content: { padding: spacing.xl },
+  headerActions: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm },
   addButton: {
     alignItems: 'center',
     backgroundColor: palette.sageDark,
@@ -502,33 +666,57 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.sm,
   },
-  hiddenRecipeCard: { opacity: 0.82 },
+  hiddenRecipeCard: {
+    backgroundColor: '#FFF9F5',
+    borderColor: '#C2410C',
+    borderWidth: 1.5,
+  },
+  hiddenNotice: {
+    alignItems: 'center',
+    backgroundColor: '#FFEDD5',
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+  },
+  hiddenNoticeIcon: {
+    alignItems: 'center',
+    backgroundColor: '#C2410C',
+    borderRadius: radius.pill,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  hiddenNoticeCopy: { flex: 1 },
+  hiddenNoticeTitle: { color: '#9A3412', fontSize: 13, fontWeight: '800' },
+  hiddenNoticeText: { color: '#9A3412', fontSize: 11, marginTop: 1 },
   cardTop: { alignItems: 'center', flexDirection: 'row' },
   recipeMain: { alignItems: 'center', flex: 1, flexDirection: 'row' },
-  cardActions: { gap: 6, marginRight: spacing.sm },
+  cardActions: { flexDirection: 'row', gap: 4, marginRight: 4 },
   cardActionButton: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.pill,
-    height: 40,
+    height: 36,
     justifyContent: 'center',
-    width: 40,
+    width: 36,
   },
+  hiddenCardActionButton: { backgroundColor: '#C2410C' },
   pressed: { opacity: 0.72 },
   recipeImage: { borderRadius: radius.md, height: 80, width: 80 },
   recipeCopy: { flex: 1, marginHorizontal: spacing.md },
   recipeTitleRow: { alignItems: 'flex-start', gap: 5 },
+  recipeTitleLink: { alignItems: 'center', flexDirection: 'row', gap: 5 },
   recipeTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
-  hiddenBadge: {
-    alignItems: 'center',
-    backgroundColor: palette.surfaceMuted,
+  recipeBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  newBadge: {
+    backgroundColor: palette.sageSoft,
     borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  hiddenBadgeText: { color: palette.textMuted, fontSize: 10, fontWeight: '700' },
+  newBadgeText: { color: palette.sageDark, fontSize: 10, fontWeight: '800' },
   recipeMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
   ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
   ratingPill: {
@@ -540,20 +728,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 4,
   },
-  memberInitial: { color: palette.sageDark, fontSize: 10, fontWeight: '800' },
+  memberInitial: { fontSize: 10, fontWeight: '800' },
   ratingText: { color: palette.textMuted, fontSize: 11, fontWeight: '600' },
-  ratingButton: {
-    alignItems: 'center',
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.md,
+  dislikedIngredientRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    justifyContent: 'center',
-    marginTop: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.md,
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 6,
   },
-  ratingButtonText: { color: palette.sageDark, flex: 1, fontSize: 13, fontWeight: '700' },
+  dislikedIngredientChip: {
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    minHeight: 26,
+    paddingLeft: 4,
+    paddingRight: 8,
+    paddingVertical: 3,
+  },
+  dislikedMemberStack: { flexDirection: 'row', marginRight: 5 },
+  dislikedMemberInitial: {
+    alignItems: 'center',
+    borderColor: palette.white,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: 'center',
+    width: 18,
+  },
+  dislikedMemberInitialOverlap: { marginLeft: -5 },
+  dislikedMemberInitialText: { color: palette.white, fontSize: 8, fontWeight: '800' },
+  dislikedIngredientText: { color: palette.text, fontSize: 10, fontWeight: '700' },
   emptyState: { alignItems: 'center', paddingVertical: 60 },
   emptyTitle: { color: palette.text, fontSize: 17, fontWeight: '700' },
   emptyText: { color: palette.textMuted, fontSize: 14, marginTop: spacing.sm },

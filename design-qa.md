@@ -46,6 +46,55 @@ final result: passed
 
 ---
 
+# Design QA — persoonlijke ingrediëntenvoorkeuren
+
+## Vergelijkingsbasis
+
+- Source visual truth: `/Users/jasperhuting/.codex/generated_images/019fd64b-c130-7810-b653-120f6960cab5/exec-240e3777-5629-4da4-8650-7bd1e69e3bb1.png`
+- Implementatie met voorbeeldvoorkeuren: `/tmp/mealmate-design-qa/recipes-chip-row.png`
+- Gecombineerde vergelijking: `/tmp/mealmate-design-qa/combined.png`
+- Profielscherm: `/tmp/mealmate-design-qa/account.png`
+- Keuzescherm: `/tmp/mealmate-design-qa/disliked-deduped.png`
+- Apparaat en staat: iPhone 17 Pro-simulator, iOS 26.5, ingelogde gebruiker en drie voorbeeldingrediënten op de eerste receptkaart.
+- Normalisatie: bron en implementatie zijn naar dezelfde breedte en hoogte geschaald en naast elkaar geopend.
+
+## Full-view vergelijking
+
+- De ingrediëntnamen staan als compacte chips onder de beoordeling, zonder extra verklarende zin of teller op de receptkaart.
+- Bij meerdere treffers staan de chips naast elkaar over de beschikbare kaartbreedte en wordt de warme kleur sterker.
+- Pen, oog en ster blijven als drie even brede ronde acties rechts van de receptinformatie staan.
+- De recepttitel heeft een zichtbare chevron en blijft de primaire route naar het receptdetail.
+- Het profiel bevat één compacte voorkeurenregel; de aparte keuzelijst gebruikt bestaande Tably-typografie, kleuren, zoekveld en selectiestijl.
+
+## Vereiste kwaliteitsvlakken
+
+- Typografie: bestaande Tably-hiërarchie en gewichten zijn behouden; chiptekst blijft compact maar leesbaar.
+- Ritme en uitlijning: de acties blijven op één regel rechts; de chips gebruiken de volledige kaartbreedte en veroorzaken geen verticale stapel bij drie voorbeeldwaarden.
+- Kleuren en tokens: de basisinterface blijft groen en mint; alleen de persoonlijke waarschuwing gebruikt oplopend warm oranje.
+- Beeldkwaliteit: bestaande receptfoto's zijn ongewijzigd, scherp en correct uitgesneden.
+- Copy: uitsluitend de betreffende ingrediëntnamen staan op de kaart; `ingrediënten lust je niet` is niet toegevoegd.
+
+## Findings
+
+Geen openstaande P0-, P1- of P2-afwijkingen gevonden binnen de gekozen richting en de laatste instructie om de acties rechts te houden.
+
+## Vergelijkingsgeschiedenis
+
+1. Eerste implementatie plaatste drie langere ingrediëntchips onder elkaar in de smalle tekstkolom.
+2. De chips zijn naar een kaartbrede rij onder de hoofdinhoud verplaatst.
+3. De eindvergelijking toont drie chips naast elkaar, met de acties ongewijzigd rechts en zonder brede beoordelingsregel.
+
+## Verificatie
+
+- Profiel, keuzelijst en receptoverzicht zijn in de native debugbuild geopend.
+- De keuzelijst is opgebouwd uit unieke ingrediënten die al in de geladen recepten voorkomen; schrijfwijzen met en zonder spatie rond `%` worden samengevoegd.
+- De visuele treffers zijn met een uitsluitend tijdelijke ontwikkelstaat gecontroleerd; deze voorbeeldwaarden maken geen deel uit van de productiecode of OTA.
+- Databaseversie `0021_personal_disliked_ingredients.sql` is op de gekoppelde omgeving toegepast en als lokaal/remote gelijk bevestigd.
+
+final result: passed
+
+---
+
 # Design QA — ingelogde persoon benadrukt bij ‘Iedereen’
 
 ## Vergelijkingsbasis

@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
+import { ProfileButton } from '@/components/mealmate/profile-button';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
@@ -27,6 +28,7 @@ export default function FamilyScreen() {
           eyebrow="SAMEN PLANNEN"
           title="Ons gezin"
           subtitle="Deel één weekmenu, boodschappenlijst en receptencollectie met je gezin."
+          action={<ProfileButton />}
         />
 
         {hasFamilyMembers ? (

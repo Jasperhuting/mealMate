@@ -2,6 +2,7 @@ import * as Application from 'expo-application';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,9 +25,12 @@ import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { getUserInitial } from '@/lib/user-initial';
 import { useAuth } from '@/state/auth-provider';
 import { useHapticsSettings } from '@/state/haptics-provider';
+import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function AccountScreen() {
+  const router = useRouter();
   const { session, avatarUrl, signOut, uploadAvatar, deleteAccount } = useAuth();
+  const { dislikedIngredientNames } = useMealMate();
   const { hapticsEnabled, setHapticsEnabled } = useHapticsSettings();
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -170,9 +174,38 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        {Platform.OS !== 'web' ? (
-          <>
-            <Text style={styles.sectionTitle}>Voorkeuren</Text>
+        <Text style={styles.sectionTitle}>Voorkeuren</Text>
+        <View style={styles.preferenceList}>
+          <Pressable
+            onPress={() => router.push('/disliked-ingredients')}
+            accessibilityRole="button"
+            accessibilityLabel="Ingrediënten kiezen die je niet lust"
+            style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+            <View style={styles.actionIcon}>
+              <AppIcon
+                name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }}
+                tintColor={palette.sageDark}
+                size={19}
+              />
+            </View>
+            <View style={styles.actionCopy}>
+              <Text style={styles.actionTitle}>Ingrediënten die ik niet lust</Text>
+              <Text style={styles.actionText}>
+                {dislikedIngredientNames.length === 0
+                  ? 'Nog niets gekozen'
+                  : `${dislikedIngredientNames.length} ${
+                      dislikedIngredientNames.length === 1 ? 'ingrediënt' : 'ingrediënten'
+                    } gekozen`}
+              </Text>
+            </View>
+            <AppIcon
+              name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+              tintColor={palette.textSoft}
+              size={17}
+            />
+          </Pressable>
+
+          {Platform.OS !== 'web' ? (
             <View style={styles.actionCard}>
               <View style={styles.actionIcon}>
                 <AppIcon
@@ -195,8 +228,8 @@ export default function AccountScreen() {
                 accessibilityLabel="Haptische feedback"
               />
             </View>
-          </>
-        ) : null}
+          ) : null}
+        </View>
 
         <Text style={styles.sectionTitle}>Toegang</Text>
         <Pressable
@@ -337,6 +370,7 @@ const styles = StyleSheet.create({
     minHeight: 76,
     padding: spacing.md,
   },
+  preferenceList: { gap: spacing.sm },
   actionIcon: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,

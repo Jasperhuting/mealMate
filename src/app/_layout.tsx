@@ -154,6 +154,14 @@ function AuthenticatedApp() {
               headerBackVisible: false,
             }}
           />
+          <Stack.Screen
+            name="disliked-ingredients"
+            options={{
+              presentation: 'modal',
+              title: 'Wat lust je niet?',
+              headerBackVisible: false,
+            }}
+          />
           </Stack>
         </RecipeFilterProvider>
       </ShoppingItemDraftProvider>

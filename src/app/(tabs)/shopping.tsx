@@ -11,6 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { getMealMateTabBarContentInset } from '@/components/mealmate/meal-mate-tab-bar';
+import { ProfileButton } from '@/components/mealmate/profile-button';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import {
@@ -158,6 +159,7 @@ export default function ShoppingScreen() {
               eyebrow="AUTOMATISCH GESORTEERD"
               title="Boodschappen"
               subtitle="Per product zie je voor welk gerecht het nodig is. Handig bij vervangen in de winkel."
+              action={<ProfileButton />}
             />
             <View style={styles.toolbarCard}>
               <View style={styles.weekRow}>

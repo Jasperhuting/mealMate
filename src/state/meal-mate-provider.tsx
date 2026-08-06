@@ -33,6 +33,7 @@ import {
 } from '@/lib/recipe-repository';
 import { removePersistedRecipeImage } from '@/lib/recipe-image-storage';
 import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
+import { normalizeIngredientPreferenceName } from '@/lib/ingredient-preferences';
 import {
   addCloudShoppingItem,
   carryCloudShoppingItems,
@@ -55,6 +56,11 @@ import type {
 import { updateMealPlanWidgets } from '@/lib/meal-plan-widgets';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/state/auth-provider';
+import {
+  loadCloudDislikedIngredientNamesByUser,
+  saveCloudDislikedIngredientNames,
+  type DislikedIngredientNamesByUser,
+} from '@/lib/user-preferences-repository';
 
 type Ratings = Record<string, Record<string, number | undefined>>;
 
@@ -89,12 +95,15 @@ type MealMateContextValue = {
   shoppingItems: ShoppingItem[];
   completedShoppingIds: string[];
   hiddenRecipeIds: string[];
+  dislikedIngredientNames: string[];
+  dislikedIngredientNamesByUser: DislikedIngredientNamesByUser;
   addShoppingItem: (item: NewShoppingItem) => Promise<void>;
   removeShoppingItem: (itemId: string) => Promise<void>;
   addRecipe: (recipe: NewRecipe) => Promise<Recipe>;
   updateRecipe: (recipeId: string, recipe: NewRecipe, imageChanged: boolean) => Promise<Recipe>;
   removeRecipe: (recipeId: string) => Promise<void>;
   setRecipeHidden: (recipeId: string, isHidden: boolean) => Promise<void>;
+  saveDislikedIngredientNames: (ingredientNames: string[]) => Promise<void>;
   planMeal: (
     dayId: string,
     recipeId: string,
@@ -119,6 +128,8 @@ const shoppingId = (name: string, unit: string) =>
 
 const customRecipesStorageKey = 'mealmate.custom-recipes.v1';
 const hiddenRecipesStorageKey = 'mealmate.hidden-recipes.v1';
+const dislikedIngredientsStorageKey = (userId?: string) =>
+  `mealmate.disliked-ingredients.${userId ?? 'local'}.v1`;
 const shoppingDepartmentsStorageKey = 'mealmate.shopping-departments.v1';
 
 const createWidgetPlanningDays = () => {
@@ -136,8 +147,13 @@ const createWidgetPlanningDays = () => {
 
 export function MealMateProvider({ children }: PropsWithChildren) {
   const { avatarUrl, session } = useAuth();
+  const currentUserId = session?.user.id;
+  const personalDislikedIngredientsStorageKey = dislikedIngredientsStorageKey(currentUserId);
   const [customRecipes, setCustomRecipes] = useState<Recipe[]>([]);
   const [hiddenRecipeIds, setHiddenRecipeIds] = useState<string[]>([]);
+  const [dislikedIngredientNames, setDislikedIngredientNames] = useState<string[]>([]);
+  const [dislikedIngredientNamesByUser, setDislikedIngredientNamesByUser] =
+    useState<DislikedIngredientNamesByUser>({});
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [plannedMeals, setPlannedMeals] = useState<PlannedMeals>({});
   const [mealPlans, setMealPlans] = useState<MealPlans>({});
@@ -160,10 +176,16 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       let localRecipes: Recipe[] = [];
       let localShoppingDepartments: Record<string, Department> = {};
       try {
-        const [storedRecipes, storedShoppingDepartments, storedHiddenRecipes] = await Promise.all([
+        const [
+          storedRecipes,
+          storedShoppingDepartments,
+          storedHiddenRecipes,
+          storedDislikedIngredients,
+        ] = await Promise.all([
           AsyncStorage.getItem(customRecipesStorageKey),
           AsyncStorage.getItem(shoppingDepartmentsStorageKey),
           AsyncStorage.getItem(hiddenRecipesStorageKey),
+          AsyncStorage.getItem(personalDislikedIngredientsStorageKey),
         ]);
         if (storedRecipes) {
           const parsedRecipes = JSON.parse(storedRecipes) as Recipe[];
@@ -194,6 +216,18 @@ export function MealMateProvider({ children }: PropsWithChildren) {
             );
           }
         }
+        if (active && storedDislikedIngredients) {
+          const parsedDislikedIngredients = JSON.parse(storedDislikedIngredients) as unknown;
+          if (Array.isArray(parsedDislikedIngredients)) {
+            const names = parsedDislikedIngredients.filter(
+              (name): name is string => typeof name === 'string',
+            );
+            setDislikedIngredientNames(names);
+            if (currentUserId) {
+              setDislikedIngredientNamesByUser({ [currentUserId]: names });
+            }
+          }
+        }
       } catch {
         // Een beschadigde lokale cache mag de app niet blokkeren.
       }
@@ -215,10 +249,16 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           }
         }
 
-        const [sharedState, widgetPlannedMeals, cloudHiddenRecipeIds] = await Promise.all([
+        const [
+          sharedState,
+          widgetPlannedMeals,
+          cloudHiddenRecipeIds,
+          cloudDislikedIngredientNamesByUser,
+        ] = await Promise.all([
           loadSharedState(initialWeekDays),
           loadCloudPlannedMeals(createWidgetPlanningDays()),
           loadCloudHiddenRecipeIds(),
+          loadCloudDislikedIngredientNamesByUser(),
         ]);
 
         if (!active) return;
@@ -229,6 +269,11 @@ export function MealMateProvider({ children }: PropsWithChildren) {
         setLeftoverMeals(sharedState.leftoverMeals);
         setRatings(sharedState.ratings);
         setHiddenRecipeIds(cloudHiddenRecipeIds);
+        const cloudDislikedIngredientNames = currentUserId
+          ? cloudDislikedIngredientNamesByUser[currentUserId] ?? []
+          : [];
+        setDislikedIngredientNames(cloudDislikedIngredientNames);
+        setDislikedIngredientNamesByUser(cloudDislikedIngredientNamesByUser);
         setMealAttendanceState(sharedState.mealAttendance);
         setCompletedShoppingIds(sharedState.completedShoppingIds);
         const syncedDepartments = {
@@ -247,6 +292,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
         await AsyncStorage.setItem(customRecipesStorageKey, JSON.stringify(cloudRecipes));
         await AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(cloudHiddenRecipeIds));
         await AsyncStorage.setItem(
+          personalDislikedIngredientsStorageKey,
+          JSON.stringify(cloudDislikedIngredientNames),
+        );
+        await AsyncStorage.setItem(
           shoppingDepartmentsStorageKey,
           JSON.stringify(syncedDepartments),
         );
@@ -263,16 +312,22 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [currentUserId, personalDislikedIngredientsStorageKey]);
 
   const reloadHousehold = useCallback(async () => {
     if (!isSupabaseConfigured) return;
     const cloudRecipes = await loadCloudRecipes();
     const widgetPlanningDays = createWidgetPlanningDays();
-    const [sharedState, widgetPlannedMeals, cloudHiddenRecipeIds] = await Promise.all([
+    const [
+      sharedState,
+      widgetPlannedMeals,
+      cloudHiddenRecipeIds,
+      cloudDislikedIngredientNamesByUser,
+    ] = await Promise.all([
       loadSharedState(weekDays),
       loadCloudPlannedMeals(widgetPlanningDays),
       loadCloudHiddenRecipeIds(),
+      loadCloudDislikedIngredientNamesByUser(),
     ]);
     setCustomRecipes(cloudRecipes);
     setFamilyMembers(sharedState.familyMembers);
@@ -291,6 +346,11 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     setLeftoverMeals(sharedState.leftoverMeals);
     setRatings(sharedState.ratings);
     setHiddenRecipeIds(cloudHiddenRecipeIds);
+    const cloudDislikedIngredientNames = currentUserId
+      ? cloudDislikedIngredientNamesByUser[currentUserId] ?? []
+      : [];
+    setDislikedIngredientNames(cloudDislikedIngredientNames);
+    setDislikedIngredientNamesByUser(cloudDislikedIngredientNamesByUser);
     setMealAttendanceState(sharedState.mealAttendance);
     setCompletedShoppingIds(sharedState.completedShoppingIds);
     setShoppingDepartments((current) => {
@@ -308,7 +368,11 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     );
     await AsyncStorage.setItem(customRecipesStorageKey, JSON.stringify(cloudRecipes));
     await AsyncStorage.setItem(hiddenRecipesStorageKey, JSON.stringify(cloudHiddenRecipeIds));
-  }, [weekDays]);
+    await AsyncStorage.setItem(
+      personalDislikedIngredientsStorageKey,
+      JSON.stringify(cloudDislikedIngredientNames),
+    );
+  }, [currentUserId, personalDislikedIngredientsStorageKey, weekDays]);
 
   const changeWeek = useCallback(
     async (direction: -1 | 1) => {
@@ -430,6 +494,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       : {
           ...input,
           id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          createdAt: new Date().toISOString(),
         };
 
     setCustomRecipes((current) => {
@@ -449,7 +514,13 @@ export function MealMateProvider({ children }: PropsWithChildren) {
 
       setCustomRecipes((current) => {
         const updated = current.map((candidate) =>
-          candidate.id === recipeId ? { ...recipe, clientKey: candidate.clientKey } : candidate,
+          candidate.id === recipeId
+            ? {
+                ...recipe,
+                clientKey: candidate.clientKey,
+                createdAt: recipe.createdAt ?? candidate.createdAt,
+              }
+            : candidate,
         );
         void AsyncStorage.setItem(customRecipesStorageKey, JSON.stringify(updated));
         return updated;
@@ -524,6 +595,24 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       return updated;
     });
   }, []);
+
+  const saveDislikedIngredientNames = useCallback(async (ingredientNames: string[]) => {
+    const normalizedNames = [...new Set(
+      ingredientNames.map(normalizeIngredientPreferenceName).filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b, 'nl'));
+    if (isSupabaseConfigured) await saveCloudDislikedIngredientNames(normalizedNames);
+    setDislikedIngredientNames(normalizedNames);
+    if (currentUserId) {
+      setDislikedIngredientNamesByUser((current) => ({
+        ...current,
+        [currentUserId]: normalizedNames,
+      }));
+    }
+    await AsyncStorage.setItem(
+      personalDislikedIngredientsStorageKey,
+      JSON.stringify(normalizedNames),
+    );
+  }, [currentUserId, personalDislikedIngredientsStorageKey]);
 
   const getRecipe = useCallback(
     (recipeId?: string) => recipes.find((recipe) => recipe.id === recipeId),
@@ -812,12 +901,15 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       shoppingItems,
       completedShoppingIds,
       hiddenRecipeIds,
+      dislikedIngredientNames,
+      dislikedIngredientNamesByUser,
       addShoppingItem,
       removeShoppingItem,
       addRecipe,
       updateRecipe,
       removeRecipe,
       setRecipeHidden,
+      saveDislikedIngredientNames,
       planMeal,
       removeMeal,
       rateRecipe,
@@ -840,12 +932,15 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       shoppingItems,
       completedShoppingIds,
       hiddenRecipeIds,
+      dislikedIngredientNames,
+      dislikedIngredientNamesByUser,
       addShoppingItem,
       removeShoppingItem,
       addRecipe,
       updateRecipe,
       removeRecipe,
       setRecipeHidden,
+      saveDislikedIngredientNames,
       planMeal,
       removeMeal,
       rateRecipe,

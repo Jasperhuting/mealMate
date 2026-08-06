@@ -55,7 +55,7 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
 
   const { data, error } = await client
     .from('recipes')
-    .select('id, client_key, title, description, duration_minutes, image_url, source_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
+    .select('id, client_key, created_at, title, description, duration_minutes, image_url, source_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
     .order('created_at', { ascending: true });
   if (error) throw error;
 
@@ -79,6 +79,7 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
       return {
         id: row.id,
         clientKey: row.client_key || undefined,
+        createdAt: row.created_at,
         title: row.title,
         subtitle: row.description || 'Opgeslagen in jullie Tably-collectie',
         minutes: row.duration_minutes || 30,
@@ -151,7 +152,7 @@ export async function createCloudRecipe(input: CloudRecipeInput): Promise<Recipe
       client_key: input.clientKey || null,
       source_url: input.sourceUrl || null,
     })
-    .select('id')
+    .select('id, created_at')
     .single();
   if (recipeError || !recipe) throw recipeError ?? new Error('Het recept kon niet worden bewaard.');
 
@@ -184,7 +185,7 @@ export async function createCloudRecipe(input: CloudRecipeInput): Promise<Recipe
     }
   }
 
-  return { ...input, id: recipe.id };
+  return { ...input, id: recipe.id, createdAt: recipe.created_at };
 }
 
 const isMissingRecipeUpdateFunction = (error: unknown) => {

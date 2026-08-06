@@ -1783,7 +1783,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
       },
       {
         "id": "peasmaker-amerikaanse-salade-5",
-        "name": "gedoogde bieslook",
+        "name": "gedroogde bieslook",
         "amount": 0.5,
         "unit": "tl",
         "department": "Conserven, soepen, sauzen, oliën"
