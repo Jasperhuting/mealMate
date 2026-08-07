@@ -16,6 +16,7 @@ import {
   createWeekDays,
   dateToIso,
   normalizeDepartment,
+  normalizeRecipeCategory,
   weekDays as initialWeekDays,
   type Department,
   type FamilyMember,
@@ -37,8 +38,10 @@ import { normalizeIngredientPreferenceName } from '@/lib/ingredient-preferences'
 import {
   addCloudShoppingItem,
   carryCloudShoppingItems,
+  loadCloudShoppingState,
   loadCloudPlannedMeals,
   loadSharedState,
+  moveCloudMealPlan,
   removeCloudMealPlan,
   removeCloudShoppingItem,
   saveCloudMealPlan,
@@ -46,8 +49,10 @@ import {
   saveCloudRating,
   setCloudShoppingItemChecked,
   setCloudShoppingItemDepartment,
+  subscribeToCloudShoppingChanges,
 } from '@/lib/shared-state-repository';
 import type {
+  CloudShoppingState,
   LeftoverMeals,
   MealAttendance,
   MealPlans,
@@ -112,6 +117,12 @@ type MealMateContextValue = {
     leftoverFrom?: string,
   ) => Promise<void>;
   removeMeal: (dayId: string, mealPlanId?: string) => Promise<void>;
+  moveMeal: (
+    sourceDayId: string,
+    targetDayId: string,
+    sourceMealPlanId: string,
+    targetMealPlanId?: string,
+  ) => Promise<void>;
   rateRecipe: (recipeId: string, memberId: string, score: number) => Promise<void>;
   setMealAttendance: (dayId: string, memberId: string, isEating: boolean) => Promise<void>;
   toggleShoppingItem: (itemId: string) => Promise<void>;
@@ -168,6 +179,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
   const [isWidgetDataReady, setIsWidgetDataReady] = useState(false);
   const completedShoppingIdsRef = useRef(completedShoppingIds);
   const shoppingItemsRef = useRef<ShoppingItem[]>([]);
+  const notifyShoppingChangeRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -192,6 +204,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
           if (Array.isArray(parsedRecipes)) {
             localRecipes = parsedRecipes.map((recipe) => ({
               ...recipe,
+              category: normalizeRecipeCategory(recipe.category),
               ingredients: recipe.ingredients.map((ingredient) =>
                 normalizeIngredientQuantity({
                   ...ingredient,
@@ -374,6 +387,66 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     );
   }, [currentUserId, personalDislikedIngredientsStorageKey, weekDays]);
 
+  const applyCloudShoppingState = useCallback((shoppingState: CloudShoppingState) => {
+    setCompletedShoppingIds(shoppingState.completedShoppingIds);
+    setShoppingDepartments((current) => {
+      const updated = { ...current, ...shoppingState.shoppingDepartments };
+      void AsyncStorage.setItem(shoppingDepartmentsStorageKey, JSON.stringify(updated));
+      return updated;
+    });
+    setManualShoppingItems(
+      shoppingState.manualShoppingItems.map((item) => ({
+        ...item,
+        recipes: [],
+        isManual: true,
+        sources: [{ type: 'manual', title: 'Los toegevoegd', amount: item.amount }],
+      })),
+    );
+  }, []);
+
+  const refreshShoppingState = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const shoppingState = await loadCloudShoppingState(weekDays);
+    applyCloudShoppingState(shoppingState);
+  }, [applyCloudShoppingState, weekDays]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentUserId) return;
+    let active = true;
+    let unsubscribe: (() => Promise<void>) | undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleRefresh = () => {
+      if (!active) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void refreshShoppingState().catch((error) => {
+          if (__DEV__) console.warn('Tably shopping realtime refresh failed', error);
+        });
+      }, 150);
+    };
+
+    void subscribeToCloudShoppingChanges(scheduleRefresh)
+      .then((connection) => {
+        if (!active) {
+          void connection.unsubscribe();
+          return;
+        }
+        notifyShoppingChangeRef.current = connection.notify;
+        unsubscribe = connection.unsubscribe;
+      })
+      .catch((error) => {
+        if (__DEV__) console.warn('Tably shopping realtime setup failed', error);
+      });
+
+    return () => {
+      active = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      notifyShoppingChangeRef.current = undefined;
+      if (unsubscribe) void unsubscribe();
+    };
+  }, [currentUserId, refreshShoppingState]);
+
   const changeWeek = useCallback(
     async (direction: -1 | 1) => {
       const nextMonday = new Date(`${weekDays[0].isoDate}T12:00:00`);
@@ -479,6 +552,10 @@ export function MealMateProvider({ children }: PropsWithChildren) {
             if (__DEV__) console.warn('Tably daily shopping refresh failed', error);
           });
         }
+      } else if (isSupabaseConfigured) {
+        void refreshShoppingState().catch((error) => {
+          if (__DEV__) console.warn('Tably shopping resume refresh failed', error);
+        });
       }
       void updateMealPlanWidgets(plannedMeals, recipes).catch((error) => {
         if (__DEV__) console.warn('Tably widget refresh failed', error);
@@ -486,7 +563,14 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     });
 
     return () => subscription.remove();
-  }, [currentDateIso, isWidgetDataReady, plannedMeals, recipes, reloadHousehold]);
+  }, [
+    currentDateIso,
+    isWidgetDataReady,
+    plannedMeals,
+    recipes,
+    refreshShoppingState,
+    reloadHousehold,
+  ]);
 
   const addRecipe = useCallback(async (input: NewRecipe) => {
     const recipe: Recipe = isSupabaseConfigured
@@ -704,6 +788,85 @@ export function MealMateProvider({ children }: PropsWithChildren) {
     }
   }, [weekDays]);
 
+  const moveMeal = useCallback(async (
+    sourceDayId: string,
+    targetDayId: string,
+    sourceMealPlanId: string,
+    targetMealPlanId?: string,
+  ) => {
+    const sourceDay = weekDays.find(
+      (item) => item.id === sourceDayId || item.isoDate === sourceDayId,
+    );
+    const targetDay = weekDays.find(
+      (item) => item.id === targetDayId || item.isoDate === targetDayId,
+    );
+    if (!sourceDay || !targetDay || sourceDay.isoDate === targetDay.isoDate) return;
+
+    const sourcePlans = mealPlans[sourceDay.isoDate] ?? [];
+    const targetPlans = mealPlans[targetDay.isoDate] ?? [];
+    const sourcePlan = sourcePlans.find((plan) => plan.id === sourceMealPlanId);
+    const targetPlan = targetMealPlanId
+      ? targetPlans.find((plan) => plan.id === targetMealPlanId)
+      : undefined;
+    if (!sourcePlan || (targetMealPlanId && !targetPlan)) {
+      throw new Error('De weekplanning is intussen gewijzigd.');
+    }
+    if (targetPlan?.recipeId === sourcePlan.recipeId) {
+      throw new Error('Dit gerecht staat al op de gekozen dag.');
+    }
+    const sourceRemainingMemberIds = new Set(
+      sourcePlans
+        .filter((plan) => plan.id !== sourceMealPlanId)
+        .flatMap((plan) => plan.memberIds),
+    );
+    const targetRemainingMemberIds = new Set(
+      targetPlans
+        .filter((plan) => plan.id !== targetMealPlanId)
+        .flatMap((plan) => plan.memberIds),
+    );
+    const createsOverlappingAssignments = targetPlan ? (
+      targetPlan.memberIds.some((memberId) => sourceRemainingMemberIds.has(memberId)) ||
+      sourcePlan.memberIds.some((memberId) => targetRemainingMemberIds.has(memberId))
+    ) : false;
+    if (createsOverlappingAssignments) {
+      throw new Error('Deze dagen hebben verschillende gerechten per persoon. Wijzig ze eerst apart.');
+    }
+
+    if (isSupabaseConfigured) {
+      await moveCloudMealPlan(
+        sourceDay,
+        targetDay,
+        sourceMealPlanId,
+        targetMealPlanId,
+      );
+    }
+
+    const nextSourcePlans = [
+      ...sourcePlans.filter((plan) => plan.id !== sourceMealPlanId),
+      ...(targetPlan ? [targetPlan] : []),
+    ];
+    const nextTargetPlans = [
+      ...targetPlans.filter((plan) => plan.id !== targetMealPlanId),
+      sourcePlan,
+    ];
+    setMealPlans((current) => ({
+      ...current,
+      [sourceDay.isoDate]: nextSourcePlans,
+      [targetDay.isoDate]: nextTargetPlans,
+    }));
+    setPlannedMeals((current) => ({
+      ...current,
+      [sourceDay.isoDate]: nextSourcePlans[0]?.recipeId,
+      [targetDay.isoDate]: nextTargetPlans[0]?.recipeId,
+    }));
+    setLeftoverMeals((current) => ({
+      ...current,
+      [sourceDay.isoDate]: nextSourcePlans[0]?.leftoverFrom,
+      [targetDay.isoDate]: nextTargetPlans[0]?.leftoverFrom,
+    }));
+    setCompletedShoppingIds([]);
+  }, [mealPlans, weekDays]);
+
   const rateRecipe = useCallback(async (recipeId: string, memberId: string, score: number) => {
     if (isSupabaseConfigured) await saveCloudRating(recipeId, memberId, score);
     setRatings((current) => ({
@@ -854,6 +1017,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       if (!isSupabaseConfigured) return;
       try {
         await setCloudShoppingItemChecked(item.name, item.unit, checked, weekDays);
+        await notifyShoppingChangeRef.current?.();
       } catch (error) {
         if (__DEV__) console.warn('Tably shopping sync failed', error);
       }
@@ -912,6 +1076,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       saveDislikedIngredientNames,
       planMeal,
       removeMeal,
+      moveMeal,
       rateRecipe,
       setMealAttendance,
       toggleShoppingItem,
@@ -943,6 +1108,7 @@ export function MealMateProvider({ children }: PropsWithChildren) {
       saveDislikedIngredientNames,
       planMeal,
       removeMeal,
+      moveMeal,
       rateRecipe,
       setMealAttendance,
       toggleShoppingItem,

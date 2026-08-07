@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
@@ -9,7 +9,8 @@ import { RecipeImage } from '@/components/mealmate/recipe-image';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
 import type { Ingredient, Recipe } from '@/data/mock-data';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
-import { recipeMatchesFilters } from '@/lib/recipe-filters';
+import { recipeMatchesFilters, sortRecipes } from '@/lib/recipe-filters';
+import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 import { useRecipeFilters } from '@/state/recipe-filter-provider';
 
@@ -20,6 +21,7 @@ export default function AddMealScreen() {
     replaceRecipeId?: string;
   }>();
   const router = useRouter();
+  const { session } = useAuth();
   const {
     recipes,
     weekDays,
@@ -30,6 +32,7 @@ export default function AddMealScreen() {
     familyMembers,
     ratings,
     mealAttendance,
+    hiddenRecipeIds,
   } = useMealMate();
   const { filters, activeFilterCount, setFilters, clearFilters } = useRecipeFilters();
   const initialRecipeId = typeof replaceRecipeId === 'string'
@@ -92,26 +95,36 @@ export default function AddMealScreen() {
       .filter((score): score is number => typeof score === 'number');
     return scores.length ? scores.reduce((total, score) => total + score, 0) / scores.length : null;
   }, [eatingMembers, ratings]);
+  const currentMember = familyMembers.find(
+    (member) =>
+      member.linkedUserId === session?.user.id
+      || (Boolean(member.email)
+        && member.email?.trim().toLowerCase() === session?.user.email?.trim().toLowerCase()),
+  );
   const sortedRecipes = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('nl');
-    return recipes.filter((recipe) => {
+    const hiddenIds = new Set(hiddenRecipeIds);
+    const matches = recipes.filter((recipe) => {
+      if (!filters.showHidden && hiddenIds.has(recipe.id)) return false;
       const matchesQuery = !normalizedQuery
-        || `${recipe.title} ${recipe.subtitle}`.toLocaleLowerCase('nl').includes(normalizedQuery);
+        || `${recipe.title} ${recipe.subtitle} ${recipe.category}`
+          .toLocaleLowerCase('nl')
+          .includes(normalizedQuery);
       return matchesQuery && recipeMatchesFilters(
         recipe,
         filters,
         ratings,
         eatingMembers.map((member) => member.id),
       );
-    }).sort((a, b) => {
-      const aScore = recipeScore(a);
-      const bScore = recipeScore(b);
-      if (aScore === null && bScore === null) return a.title.localeCompare(b.title, 'nl');
-      if (aScore === null) return 1;
-      if (bScore === null) return -1;
-      return bScore - aScore;
     });
-  }, [eatingMembers, filters, query, ratings, recipeScore, recipes]);
+    return sortRecipes(
+      matches,
+      filters.sortBy ?? 'household-rating',
+      ratings,
+      eatingMembers.map((member) => member.id),
+      currentMember?.id,
+    );
+  }, [currentMember?.id, eatingMembers, filters, hiddenRecipeIds, query, ratings, recipes]);
 
   const clearQuery = () => {
     searchInputRef.current?.clear();
@@ -120,6 +133,23 @@ export default function AddMealScreen() {
 
   const activeFilterLabels = useMemo(() => {
     const labels: { key: string; label: string }[] = [];
+    if (filters.sortBy !== null) {
+      const sortLabels = {
+        newest: 'Nieuwste eerst',
+        alphabetical: 'Alfabetisch',
+        'personal-rating': 'Mijn rating',
+        'household-rating': 'Rating samen',
+      } as const;
+      labels.push({ key: 'sort', label: sortLabels[filters.sortBy] });
+    }
+    if (filters.categories.length > 0) {
+      labels.push({
+        key: 'categories',
+        label: filters.categories.length === 1
+          ? filters.categories[0]
+          : `${filters.categories.length} categorieën`,
+      });
+    }
     if (filters.ingredientNames.length > 0) {
       labels.push({
         key: 'ingredients',
@@ -143,10 +173,13 @@ export default function AddMealScreen() {
     }
     if (filters.quickAndEasy) labels.push({ key: 'easy', label: 'Snel & makkelijk' });
     if (filters.neverRated) labels.push({ key: 'unrated', label: 'Nog nooit beoordeeld' });
+    if (filters.showHidden) labels.push({ key: 'hidden', label: 'Inclusief verborgen' });
     return labels;
   }, [familyMembers, filters]);
 
   const removeFilter = (key: string) => {
+    if (key === 'sort') setFilters({ ...filters, sortBy: null });
+    if (key === 'categories') setFilters({ ...filters, categories: [] });
     if (key === 'ingredients') setFilters({ ...filters, ingredientNames: [] });
     if (key === 'household') setFilters({ ...filters, minimumHouseholdRating: null });
     if (key === 'member') {
@@ -155,9 +188,11 @@ export default function AddMealScreen() {
     if (key === 'minutes') setFilters({ ...filters, maximumMinutes: null });
     if (key === 'easy') setFilters({ ...filters, quickAndEasy: false });
     if (key === 'unrated') setFilters({ ...filters, neverRated: false });
+    if (key === 'hidden') setFilters({ ...filters, showHidden: false });
   };
 
   const selectRecipe = (recipe: Recipe) => {
+    Keyboard.dismiss();
     const existingPlan = plannedOptions.find((plan) => plan.recipeId === recipe.id);
     const alreadyAssignedIds = new Set(plannedOptions.flatMap((plan) => plan.memberIds));
     const unassignedIds = familyMembers
@@ -177,6 +212,7 @@ export default function AddMealScreen() {
   };
 
   const selectLeftover = (recipe: Recipe, sourceDate: string) => {
+    Keyboard.dismiss();
     const existingPlan = plannedOptions.find((plan) => plan.recipeId === recipe.id);
     const alreadyAssignedIds = new Set(plannedOptions.flatMap((plan) => plan.memberIds));
     setSelectedRecipeId(recipe.id);
@@ -523,8 +559,8 @@ export default function AddMealScreen() {
                 })}
                 accessibilityRole="button"
                 accessibilityLabel={activeFilterCount > 0
-                  ? `Filters openen, ${activeFilterCount} actief`
-                  : 'Filters openen'}
+                  ? `Filteren en sorteren openen, ${activeFilterCount} keuzes actief`
+                  : 'Filteren en sorteren openen'}
                 style={({ pressed }) => [
                   styles.filterButton,
                   activeFilterCount > 0 && styles.filterButtonActive,
@@ -644,7 +680,9 @@ export default function AddMealScreen() {
               <RecipeImage recipe={item} style={styles.recipeImage} />
               <View style={styles.recipeCopy}>
                 <Text style={styles.recipeTitle}>{item.title}</Text>
-                <Text style={styles.recipeMeta}>{item.minutes} min · {item.ingredients.length} ingrediënten</Text>
+                <Text style={styles.recipeMeta}>
+                  {item.category} · {item.minutes} min · {item.ingredients.length} ingrediënten
+                </Text>
                 {recipeScore(item) !== null ? (
                   <Text style={styles.recipeScore}>★ {recipeScore(item)?.toFixed(1)} voor wie mee-eet</Text>
                 ) : null}

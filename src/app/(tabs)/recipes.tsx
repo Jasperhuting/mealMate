@@ -22,7 +22,7 @@ import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
 import type { FamilyMember, Recipe } from '@/data/mock-data';
 import { normalizeIngredientPreferenceName } from '@/lib/ingredient-preferences';
-import { recipeMatchesFilters } from '@/lib/recipe-filters';
+import { recipeMatchesFilters, sortRecipes } from '@/lib/recipe-filters';
 import { useAuth } from '@/state/auth-provider';
 import { useMealMate } from '@/state/meal-mate-provider';
 import { useRecipeFilters } from '@/state/recipe-filter-provider';
@@ -75,6 +75,12 @@ export default function RecipesScreen() {
   const [query, setQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const isSearchActive = isSearchFocused || query.trim().length > 0;
+  const currentMember = familyMembers.find(
+    (member) =>
+      member.linkedUserId === currentUserId
+      || (Boolean(member.email)
+        && member.email?.trim().toLowerCase() === currentUserEmail?.trim().toLowerCase()),
+  );
   const preferenceMembers: LinkedFamilyMember[] = (() => {
     const linkedMembers = familyMembers.filter(hasLinkedUser);
     if (!currentUserId || linkedMembers.some((member) => member.linkedUserId === currentUserId)) {
@@ -108,9 +114,11 @@ export default function RecipesScreen() {
     const normalized = query.trim().toLocaleLowerCase('nl');
     const hiddenIds = new Set(hiddenRecipeIds);
     const matches = recipes.filter((recipe) => {
-      if (!isSearchActive && hiddenIds.has(recipe.id)) return false;
+      if (!filters.showHidden && hiddenIds.has(recipe.id)) return false;
       const matchesQuery = !normalized
-        || `${recipe.title} ${recipe.subtitle}`.toLocaleLowerCase('nl').includes(normalized);
+        || `${recipe.title} ${recipe.subtitle} ${recipe.category}`
+          .toLocaleLowerCase('nl')
+          .includes(normalized);
       return matchesQuery && recipeMatchesFilters(
         recipe,
         filters,
@@ -118,11 +126,34 @@ export default function RecipesScreen() {
         familyMembers.map((member) => member.id),
       );
     });
-    return matches.sort((a, b) => a.title.localeCompare(b.title, 'nl'));
-  }, [familyMembers, filters, hiddenRecipeIds, isSearchActive, query, ratings, recipes]);
+    return sortRecipes(
+      matches,
+      filters.sortBy ?? 'newest',
+      ratings,
+      familyMembers.map((member) => member.id),
+      currentMember?.id,
+    );
+  }, [currentMember?.id, familyMembers, filters, hiddenRecipeIds, query, ratings, recipes]);
 
   const activeFilterLabels = useMemo(() => {
     const labels: { key: string; label: string }[] = [];
+    if (filters.sortBy !== null) {
+      const sortLabels = {
+        newest: 'Nieuwste eerst',
+        alphabetical: 'Alfabetisch',
+        'personal-rating': 'Mijn rating',
+        'household-rating': 'Rating samen',
+      } as const;
+      labels.push({ key: 'sort', label: sortLabels[filters.sortBy] });
+    }
+    if (filters.categories.length > 0) {
+      labels.push({
+        key: 'categories',
+        label: filters.categories.length === 1
+          ? filters.categories[0]
+          : `${filters.categories.length} categorieën`,
+      });
+    }
     if (filters.ingredientNames.length > 0) {
       labels.push({
         key: 'ingredients',
@@ -146,10 +177,13 @@ export default function RecipesScreen() {
     }
     if (filters.quickAndEasy) labels.push({ key: 'easy', label: 'Snel & makkelijk' });
     if (filters.neverRated) labels.push({ key: 'unrated', label: 'Nog nooit beoordeeld' });
+    if (filters.showHidden) labels.push({ key: 'hidden', label: 'Inclusief verborgen' });
     return labels;
   }, [familyMembers, filters]);
 
   const removeFilter = (key: string) => {
+    if (key === 'sort') setFilters({ ...filters, sortBy: null });
+    if (key === 'categories') setFilters({ ...filters, categories: [] });
     if (key === 'ingredients') setFilters({ ...filters, ingredientNames: [] });
     if (key === 'household') setFilters({ ...filters, minimumHouseholdRating: null });
     if (key === 'member') {
@@ -158,6 +192,7 @@ export default function RecipesScreen() {
     if (key === 'minutes') setFilters({ ...filters, maximumMinutes: null });
     if (key === 'easy') setFilters({ ...filters, quickAndEasy: false });
     if (key === 'unrated') setFilters({ ...filters, neverRated: false });
+    if (key === 'hidden') setFilters({ ...filters, showHidden: false });
   };
 
   const openRating = (recipe: Recipe) => {
@@ -254,8 +289,8 @@ export default function RecipesScreen() {
                 onPress={() => router.push('/recipe-filters')}
                 accessibilityRole="button"
                 accessibilityLabel={activeFilterCount > 0
-                  ? `Filters openen, ${activeFilterCount} actief`
-                  : 'Filters openen'}
+                  ? `Filteren en sorteren openen, ${activeFilterCount} keuzes actief`
+                  : 'Filteren en sorteren openen'}
                 style={({ pressed }) => [
                   styles.filterButton,
                   activeFilterCount > 0 && styles.filterButtonActive,
@@ -378,6 +413,11 @@ export default function RecipesScreen() {
           });
           return (
             <View style={[styles.recipeCard, isHidden && styles.hiddenRecipeCard]}>
+              {isNew ? (
+                <View style={styles.newRecipeStrip}>
+                  <Text style={styles.newRecipeStripText}>Nieuw recept</Text>
+                </View>
+              ) : null}
               {isHidden ? (
                 <View style={styles.hiddenNotice}>
                   <View style={styles.hiddenNoticeIcon}>
@@ -396,37 +436,18 @@ export default function RecipesScreen() {
                 </View>
               ) : null}
               <View style={styles.cardTop}>
-                <View style={styles.recipeMain}>
+                <Pressable
+                  onPress={() => openRecipe(item)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${item.title}`}
+                  style={({ pressed }) => [styles.recipeMain, pressed && styles.pressed]}>
                   <RecipeImage recipe={item} style={styles.recipeImage} />
                   <View style={styles.recipeCopy}>
                     <View style={styles.recipeTitleRow}>
-                      <Pressable
-                        onPress={() => openRecipe(item)}
-                        accessibilityRole="link"
-                        accessibilityLabel={`Open ${item.title}`}
-                        hitSlop={4}
-                        style={({ pressed }) => [styles.recipeTitleLink, pressed && styles.pressed]}>
-                        <Text style={styles.recipeTitle}>{item.title}</Text>
-                        <AppIcon
-                          name={{
-                            ios: 'chevron.right',
-                            android: 'chevron_right',
-                            web: 'chevron_right',
-                          }}
-                          tintColor={palette.textSoft}
-                          size={13}
-                        />
-                      </Pressable>
-                      {isNew ? (
-                        <View style={styles.recipeBadges}>
-                          <View style={styles.newBadge}>
-                            <Text style={styles.newBadgeText}>Nieuw</Text>
-                          </View>
-                        </View>
-                      ) : null}
+                      <Text style={styles.recipeTitle}>{item.title}</Text>
                     </View>
                     <Text style={styles.recipeMeta}>
-                      {item.minutes} min · {item.ingredients.length} ingrediënten
+                      {item.category} · {item.minutes} min · {item.ingredients.length} ingrediënten
                     </Text>
                     {familyMembers.length > 0 ? (
                       <View style={styles.ratingRow}>
@@ -443,13 +464,13 @@ export default function RecipesScreen() {
                       </View>
                     ) : null}
                   </View>
-                </View>
+                </Pressable>
                 <View style={styles.cardActions}>
                   <Pressable
                     onPress={() => editRecipe(item)}
                     accessibilityRole="button"
                     accessibilityLabel={`Bewerk ${item.title}`}
-                    hitSlop={4}
+                    hitSlop={5}
                     style={({ pressed }) => [styles.cardActionButton, pressed && styles.pressed]}>
                     <AppIcon
                       name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
@@ -461,7 +482,7 @@ export default function RecipesScreen() {
                     onPress={() => void toggleRecipeHidden(item)}
                     accessibilityRole="button"
                     accessibilityLabel={`${item.title} ${isHidden ? 'weer tonen' : 'verbergen'}`}
-                    hitSlop={4}
+                    hitSlop={5}
                     style={({ pressed }) => [
                       styles.cardActionButton,
                       isHidden && styles.hiddenCardActionButton,
@@ -481,7 +502,7 @@ export default function RecipesScreen() {
                     onPress={() => openRating(item)}
                     accessibilityRole="button"
                     accessibilityLabel={`Beoordeel ${item.title}`}
-                    hitSlop={4}
+                    hitSlop={5}
                     style={({ pressed }) => [styles.cardActionButton, pressed && styles.pressed]}>
                     <AppIcon
                       name={{ ios: 'star', android: 'star_outline', web: 'star_outline' }}
@@ -664,8 +685,16 @@ const styles = StyleSheet.create({
     ...shadow.card,
     backgroundColor: palette.surface,
     borderRadius: radius.lg,
-    padding: spacing.sm,
   },
+  newRecipeStrip: {
+    backgroundColor: palette.surfaceStrong,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    justifyContent: 'center',
+    minHeight: 30,
+    paddingHorizontal: spacing.md,
+  },
+  newRecipeStripText: { color: palette.sageDark, fontSize: 11, fontWeight: '800' },
   hiddenRecipeCard: {
     backgroundColor: '#FFF9F5',
     borderColor: '#C2410C',
@@ -677,7 +706,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     flexDirection: 'row',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+    margin: spacing.sm,
+    marginBottom: 0,
     padding: spacing.sm,
   },
   hiddenNoticeIcon: {
@@ -691,32 +721,31 @@ const styles = StyleSheet.create({
   hiddenNoticeCopy: { flex: 1 },
   hiddenNoticeTitle: { color: '#9A3412', fontSize: 13, fontWeight: '800' },
   hiddenNoticeText: { color: '#9A3412', fontSize: 11, marginTop: 1 },
-  cardTop: { alignItems: 'center', flexDirection: 'row' },
-  recipeMain: { alignItems: 'center', flex: 1, flexDirection: 'row' },
-  cardActions: { flexDirection: 'row', gap: 4, marginRight: 4 },
+  cardTop: { alignItems: 'center', flexDirection: 'row', padding: spacing.sm },
+  recipeMain: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+  },
+  cardActions: { flexDirection: 'column', gap: 3, marginRight: 4 },
   cardActionButton: {
     alignItems: 'center',
     backgroundColor: palette.sageSoft,
     borderRadius: radius.pill,
-    height: 36,
+    height: 34,
     justifyContent: 'center',
-    width: 36,
+    width: 34,
   },
   hiddenCardActionButton: { backgroundColor: '#C2410C' },
   pressed: { opacity: 0.72 },
   recipeImage: { borderRadius: radius.md, height: 80, width: 80 },
-  recipeCopy: { flex: 1, marginHorizontal: spacing.md },
-  recipeTitleRow: { alignItems: 'flex-start', gap: 5 },
-  recipeTitleLink: { alignItems: 'center', flexDirection: 'row', gap: 5 },
-  recipeTitle: { color: palette.text, fontSize: 16, fontWeight: '700' },
-  recipeBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
-  newBadge: {
-    backgroundColor: palette.sageSoft,
-    borderRadius: radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  recipeCopy: { flex: 1, marginLeft: spacing.md },
+  recipeTitleRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  newBadgeText: { color: palette.sageDark, fontSize: 10, fontWeight: '800' },
+  recipeTitle: { color: palette.text, flex: 1, fontSize: 16, fontWeight: '700', paddingRight: 6 },
   recipeMeta: { color: palette.textMuted, fontSize: 12, marginTop: 5 },
   ratingRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
   ratingPill: {
@@ -734,7 +763,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 5,
-    marginTop: 6,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   dislikedIngredientChip: {
     alignItems: 'center',

@@ -3,7 +3,9 @@ import { File } from 'expo-file-system';
 import { curatedRecipes } from '@/data/curated-recipes';
 import {
   dateToIso,
+  defaultRecipeCategory,
   normalizeDepartment,
+  normalizeRecipeCategory,
   recipes as exampleRecipes,
   type Recipe,
 } from '@/data/mock-data';
@@ -55,7 +57,7 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
 
   const { data, error } = await client
     .from('recipes')
-    .select('id, client_key, created_at, title, description, duration_minutes, image_url, source_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
+    .select('id, client_key, created_at, title, description, category, duration_minutes, image_url, source_url, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
     .order('created_at', { ascending: true });
   if (error) throw error;
 
@@ -82,6 +84,7 @@ export async function loadCloudRecipes(): Promise<Recipe[]> {
         createdAt: row.created_at,
         title: row.title,
         subtitle: row.description || 'Opgeslagen in jullie Tably-collectie',
+        category: normalizeRecipeCategory(row.category),
         minutes: row.duration_minutes || 30,
         image: bundledRecipe?.image ?? (signedImageUrl ? { uri: signedImageUrl } : null),
         sourceUrl: row.source_url || undefined,
@@ -147,6 +150,7 @@ export async function createCloudRecipe(input: CloudRecipeInput): Promise<Recipe
       created_by: userId,
       title: input.title,
       description: input.subtitle,
+      category: input.category,
       duration_minutes: input.minutes,
       servings: 2,
       client_key: input.clientKey || null,
@@ -202,7 +206,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
   if (!supabase) return;
   const { data: previousRecipe, error: loadError } = await supabase
     .from('recipes')
-    .select('title, description, duration_minutes, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
+    .select('title, description, category, duration_minutes, recipe_ingredients(id, name, quantity, unit, department, sort_order)')
     .eq('id', recipeId)
     .single();
   if (loadError) throw loadError;
@@ -212,6 +216,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
     .update({
       title: input.title,
       description: input.subtitle,
+      category: input.category,
       duration_minutes: input.minutes,
       updated_at: new Date().toISOString(),
     })
@@ -228,6 +233,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
       .update({
         title: previousRecipe.title,
         description: previousRecipe.description,
+        category: previousRecipe.category,
         duration_minutes: previousRecipe.duration_minutes,
       })
       .eq('id', recipeId);
@@ -251,6 +257,7 @@ async function updateCloudRecipeWithoutRpc(recipeId: string, input: NewRecipe) {
       .update({
         title: previousRecipe.title,
         description: previousRecipe.description,
+        category: previousRecipe.category,
         duration_minutes: previousRecipe.duration_minutes,
       })
       .eq('id', recipeId);
@@ -355,6 +362,7 @@ export async function updateCloudRecipe(
     target_recipe_id: recipeId,
     new_title: normalizedInput.title,
     new_description: normalizedInput.subtitle,
+    new_category: normalizedInput.category,
     new_duration_minutes: normalizedInput.minutes,
     new_ingredients: normalizedInput.ingredients.map((item, index) => ({
       name: item.name,
@@ -371,6 +379,12 @@ export async function updateCloudRecipe(
       throw error;
     }
   }
+
+  const { error: sourceUrlUpdateError } = await supabase
+    .from('recipes')
+    .update({ source_url: normalizedInput.sourceUrl || null })
+    .eq('id', recipeId);
+  if (sourceUrlUpdateError) throw sourceUrlUpdateError;
 
   if (imageChanged) {
     const localImageUri = imageUri(normalizedInput.image);
@@ -462,6 +476,7 @@ export async function ensureSeedRecipes() {
         created_by: userId,
         title: recipe.title,
         description: recipe.subtitle,
+        category: recipe.category,
         duration_minutes: recipe.minutes,
         servings: 2,
         image_url: imageUri(recipe.image),
@@ -526,6 +541,7 @@ export async function ensureExampleRecipes() {
       clientKey: recipe.id,
       title: recipe.title,
       subtitle: recipe.subtitle,
+      category: recipe.category ?? defaultRecipeCategory,
       minutes: recipe.minutes,
       image: null,
       ingredients: recipe.ingredients,

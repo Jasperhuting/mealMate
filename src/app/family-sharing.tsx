@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -37,6 +38,21 @@ export default function FamilySharingScreen() {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const startEditing = (memberId: string, memberName: string) => {
     setEditingMemberId(memberId);
@@ -140,10 +156,10 @@ export default function FamilySharingScreen() {
       <ModalScreenHeader title="Gezin instellen" closeLabel="Sluit gezin instellen" />
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={88}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <Text style={styles.eyebrow}>SAMEN IN TABLY</Text>
@@ -188,27 +204,9 @@ export default function FamilySharingScreen() {
               style={styles.input}
               accessibilityLabel="E-mailadres van het gezinslid"
             />
-            <Pressable
-              onPress={() => void sendInvite()}
-              disabled={isInviting}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.primaryButton,
-                (pressed || isInviting) && styles.pressed,
-              ]}>
-              {isInviting ? (
-                <ActivityIndicator color={palette.white} />
-              ) : (
-                <>
-                  <AppIcon
-                    name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }}
-                    tintColor={palette.white}
-                    size={18}
-                  />
-                  <Text style={styles.primaryText}>Voeg toe en verstuur uitnodiging</Text>
-                </>
-              )}
-            </Pressable>
+            {keyboardHeight === 0 ? (
+              <InviteButton isInviting={isInviting} onPress={() => void sendInvite()} />
+            ) : null}
           </View>
 
           {familyMembers.length > 0 ? (
@@ -266,17 +264,9 @@ export default function FamilySharingScreen() {
                             style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}>
                             <Text style={styles.cancelButtonText}>Annuleer</Text>
                           </Pressable>
-                          <Pressable
-                            onPress={() => void saveMember()}
-                            disabled={isBusy}
-                            accessibilityRole="button"
-                            style={({ pressed }) => [styles.saveButton, (pressed || isBusy) && styles.pressed]}>
-                            {isBusy ? (
-                              <ActivityIndicator color={palette.white} size="small" />
-                            ) : (
-                              <Text style={styles.saveButtonText}>Bewaar</Text>
-                            )}
-                          </Pressable>
+                          {keyboardHeight === 0 ? (
+                            <MemberSaveButton isBusy={isBusy} onPress={() => void saveMember()} />
+                          ) : null}
                         </View>
                       </View>
                     ) : (
@@ -327,14 +317,77 @@ export default function FamilySharingScreen() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
+      {keyboardHeight > 0 ? (
+        <View style={[styles.floatingFooter, { bottom: keyboardHeight }]}>
+          {editingMemberId ? (
+            <MemberSaveButton isBusy={Boolean(busyMemberId)} onPress={() => void saveMember()} floating />
+          ) : (
+            <InviteButton isInviting={isInviting} onPress={() => void sendInvite()} />
+          )}
+        </View>
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+function InviteButton({ isInviting, onPress }: { isInviting: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isInviting}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.primaryButton,
+        (pressed || isInviting) && styles.pressed,
+      ]}>
+      {isInviting ? (
+        <ActivityIndicator color={palette.white} />
+      ) : (
+        <>
+          <AppIcon
+            name={{ ios: 'paperplane.fill', android: 'send', web: 'send' }}
+            tintColor={palette.white}
+            size={18}
+          />
+          <Text style={styles.primaryText}>Voeg toe en verstuur uitnodiging</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+function MemberSaveButton({
+  floating = false,
+  isBusy,
+  onPress,
+}: {
+  floating?: boolean;
+  isBusy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isBusy}
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.saveButton,
+        floating && styles.floatingSaveButton,
+        (pressed || isBusy) && styles.pressed,
+      ]}>
+      {isBusy ? (
+        <ActivityIndicator color={palette.white} size="small" />
+      ) : (
+        <Text style={styles.saveButtonText}>Bewaar</Text>
+      )}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   keyboardView: { flex: 1 },
-  content: { padding: spacing.xl, paddingBottom: spacing.xxl },
+  content: { padding: spacing.xl, paddingBottom: 104 },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
   subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 21, marginTop: 6 },
@@ -401,7 +454,19 @@ const styles = StyleSheet.create({
   cancelButton: { alignItems: 'center', borderColor: palette.border, borderRadius: radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: spacing.lg },
   cancelButtonText: { color: palette.textMuted, fontSize: 13, fontWeight: '700' },
   saveButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, justifyContent: 'center', minHeight: 40, minWidth: 86, paddingHorizontal: spacing.lg },
+  floatingSaveButton: { flex: 1, minHeight: 54 },
   saveButtonText: { color: palette.white, fontSize: 13, fontWeight: '700' },
+  floatingFooter: {
+    backgroundColor: palette.background,
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    left: 0,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    position: 'absolute',
+    right: 0,
+    zIndex: 10,
+  },
   privacyText: { color: palette.textSoft, fontSize: 12, lineHeight: 18, marginTop: spacing.xl, textAlign: 'center' },
   pressed: { opacity: 0.7 },
 });

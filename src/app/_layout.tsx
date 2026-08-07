@@ -115,6 +115,14 @@ function AuthenticatedApp() {
             }}
           />
           <Stack.Screen
+            name="move-meal"
+            options={{
+              presentation: 'modal',
+              title: 'Gerecht verplaatsen',
+              headerBackVisible: false,
+            }}
+          />
+          <Stack.Screen
             name="rate-recipe"
             options={{
               presentation: 'modal',

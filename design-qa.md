@@ -1,3 +1,61 @@
+# Design QA — duidelijke compacte receptkaarten
+
+## Vergelijkingsbasis
+
+- Source visual truth: `/Users/jasperhuting/.codex/generated_images/019fd6ef-ef35-70e0-b69a-af69b7ca2cbd/exec-bf6ec3d6-1f2b-4e6e-9769-aa0ac92b6db4.png`
+- Implementatiescreenshot: `/tmp/mealmate-vertical-actions.png`
+- Gecombineerde vergelijking: `/tmp/mealmate-option2-comparison.png`
+- Apparaat en staat: iPhone 17 Pro-simulator, iOS 26.5, ingelogde gebruiker, receptoverzicht met nieuwe recepten.
+- Bronafmetingen: 853 × 1844 px; appinhoud zonder apparaatstatusbalk.
+- Implementatieafmetingen: 1206 × 2622 px; 402 × 874 pt bij 3× dichtheid, inclusief native statusbalk.
+- Normalisatie: beide beelden zijn naar 853 × 1844 px gebracht en in één gecombineerde vergelijking geopend. Het verschil door de native statusbalk is als runtime-infrastructuur behandeld.
+
+## Full-view vergelijking
+
+- De lichtgroene strook `Nieuw recept` staat consequent bovenaan iedere nieuwe receptkaart en is de enige nieuw-status; de dubbele badge in het inhoudsblok is verwijderd.
+- Foto, titel, categorie, tijd, ingrediëntenaantal en gezinsbeoordeling staan weer in één compacte receptregel.
+- Bewerken, verbergen en beoordelen gebruiken de drie ronde iconknoppen rechts van het recept, verticaal van boven naar beneden.
+- De bestaande kaartschaduw valt weer zichtbaar buiten de afgeronde kaart en wordt niet door de statusstrook afgeknipt.
+- De bestaande Tably-header, zoekfunctie, filterknop en echte receptdata zijn behouden.
+
+## Gerichte vergelijking
+
+Een extra crop was niet nodig. In de gecombineerde full-view zijn statusstrook, titelhiërarchie, metadata, beoordeling en beide actietoetsen op leesbare schaal zichtbaar.
+
+## Vereiste kwaliteitsvlakken
+
+- Typografie: bestaande Tably-lettertypen en gewichten zijn behouden; titels blijven dominant en metadata is kleiner maar leesbaar.
+- Ritme en uitlijning: de kaart gebruikt een vaste statusstrook en één compacte inhoudsregel; de drie acties vormen een smalle verticale kolom rechts.
+- Kleuren en tokens: uitsluitend bestaande crème-, wit-, groen- en minttokens zijn gebruikt; de statusstrook concurreert niet met de primaire actie.
+- Beeldkwaliteit: bestaande `RecipeImage`-bronnen blijven scherp, hebben een consistente 104 × 104 pt uitsnede en zijn niet opnieuw gegenereerd of uitgerekt.
+- Copy: `Nieuw recept` blijft als enige nieuw-status staan; de losse `Nieuw`-badge en de labels `Beoordelen` en `Meer` zijn niet meer zichtbaar.
+
+## Findings
+
+Geen openstaande P0-, P1- of P2-afwijkingen gevonden.
+
+- P3: de gegenereerde bron bevat fictieve voorbeeldgerechten en geen native statusbalk; de implementatie gebruikt bewust de actuele productiegegevens en runtime-eigen iOS-statusbalk.
+- P3: de development-build toont onderaan een tijdelijke debuggerwaarschuwing door een bestaande cloud-syncwaarschuwing (`JWT issued at future`). Deze banner bestaat niet in de productie-OTA en raakt de kaartlayout niet.
+
+## Vergelijkingsgeschiedenis
+
+1. Broncontrole: richting 2 bevatte zowel een bovenste statusstrook als een tweede `Nieuw`-badge in het inhoudsblok.
+2. Correctie van de bron: de tweede badge is verwijderd en de bovenste strook bleef als enige statusindicator over.
+3. Eerste implementatie: de ronde acties werden vervangen door `Beoordelen` en `Meer`, waardoor de kaarten ongewenst hoger werden.
+4. Eerste simulatorcorrectie: clipping is verwijderd en alleen de bovenhoeken van de statusstrook zijn afgerond, zodat de originele schaduw terugkeerde.
+5. Eindcorrectie: de kleinere foto en drie ronde acties zijn hersteld; de acties staan verticaal rechts en de extra actieregel onderaan is verwijderd.
+
+## Verificatie
+
+- De native debugbuild is zonder buildfouten of waarschuwingen gecompileerd en geïnstalleerd.
+- De route `mealmate://recipes` opent het nieuwe receptoverzicht correct.
+- Recept openen, bewerken, verbergen en beoordelen behouden hun bestaande directe acties en routes.
+- `npm run lint`, `npx tsc --noEmit` en de visuele vergelijking zijn geslaagd.
+
+final result: passed
+
+---
+
 # Design QA — gebruikersvoorletter en compacte weekheader
 
 ## Vergelijkingsbasis

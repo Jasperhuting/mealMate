@@ -8,6 +8,7 @@ import { ProfileButton } from '@/components/mealmate/profile-button';
 import { ScreenHeader } from '@/components/mealmate/screen-header';
 import { UserAvatar } from '@/components/mealmate/user-avatar';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
+import { getEffectiveMealPlanMemberIds } from '@/lib/meal-plan-audience';
 import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function FamilyScreen() {
@@ -128,9 +129,13 @@ export default function FamilyScreen() {
               const mealSummary = dayPlans.length > 0
                 ? dayPlans.map((plan) => getRecipe(plan.recipeId)?.title).filter(Boolean).join(' · ')
                 : getRecipe(plannedMeals[day.isoDate])?.title;
-              const assignedMemberIds = new Set(
-                dayPlans.flatMap((plan) => plan.memberIds),
-              );
+              const assignedMemberIds = new Set(dayPlans.flatMap((plan) =>
+                getEffectiveMealPlanMemberIds(
+                  plan.memberIds,
+                  familyMembers.map((member) => member.id),
+                  mealAttendance[day.isoDate],
+                ),
+              ));
               const eatingMembers = familyMembers.filter(
                 (member) =>
                   mealAttendance[day.isoDate]?.[member.id] !== false &&

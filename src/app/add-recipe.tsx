@@ -2,10 +2,11 @@ import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Image as NativeImage,
   Platform,
@@ -21,10 +22,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, spacing } from '@/constants/mealmate-theme';
-import type { Ingredient, Recipe } from '@/data/mock-data';
+import {
+  defaultRecipeCategory,
+  recipeCategories,
+  type Ingredient,
+  type Recipe,
+  type RecipeCategory,
+} from '@/data/mock-data';
 import { parseIngredientLines } from '@/lib/ingredient-parser';
 import { mealMateHaptics } from '@/lib/mealmate-haptics';
 import { persistRecipeImage } from '@/lib/recipe-image-storage';
+import { normalizeRecipeSourceUrl } from '@/lib/recipe-source-url';
 import {
   extractRecipeWithAi,
   isRecipeAiConfigured,
@@ -98,9 +106,14 @@ export default function AddRecipeScreen() {
   const canDeleteRecipe = isEditing && allowDelete === 'true';
   const initialImageUri = existingImageUri(editingRecipe?.image ?? null);
   const titleInputRef = useRef<TextInput>(null);
+  const sourceUrlInputRef = useRef<TextInput>(null);
   const [mode, setMode] = useState<InputMode>(isEditing ? 'manual' : 'ai');
   const [title, setTitle] = useState(editingRecipe?.title ?? '');
   const [description, setDescription] = useState(editingRecipe?.subtitle ?? '');
+  const [sourceUrl, setSourceUrl] = useState(editingRecipe?.sourceUrl ?? '');
+  const [category, setCategory] = useState<RecipeCategory>(
+    editingRecipe?.category ?? defaultRecipeCategory,
+  );
   const [minutes, setMinutes] = useState(String(editingRecipe?.minutes ?? 30));
   const [ingredientText, setIngredientText] = useState(
     editingRecipe ? formatIngredients(editingRecipe.ingredients) : '',
@@ -116,6 +129,7 @@ export default function AddRecipeScreen() {
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [wasFilledByAi, setWasFilledByAi] = useState(false);
   const [formVersion, setFormVersion] = useState(0);
 
@@ -123,6 +137,20 @@ export default function AddRecipeScreen() {
     () => aiIngredients ?? parseIngredientLines(ingredientText),
     [aiIngredients, ingredientText],
   );
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const setManualIngredientText = (value: string) => {
     setIngredientText(value);
@@ -143,6 +171,15 @@ export default function AddRecipeScreen() {
       );
       return;
     }
+    const normalizedSourceUrl = normalizeRecipeSourceUrl(sourceUrl);
+    if (normalizedSourceUrl === null) {
+      Alert.alert(
+        'Link klopt niet',
+        'Vul een volledige webpagina in, bijvoorbeeld https://voorbeeld.nl/recept.',
+      );
+      sourceUrlInputRef.current?.focus();
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -152,6 +189,7 @@ export default function AddRecipeScreen() {
       const recipeInput = {
         title: cleanTitle,
         subtitle: description.trim() || 'Zelf toegevoegd aan jullie recepten',
+        category,
         minutes: Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : 30,
         image: imageChanged
           ? imageUri
@@ -159,7 +197,7 @@ export default function AddRecipeScreen() {
             : null
           : editingRecipe?.image ?? null,
         ingredients,
-        sourceUrl: editingRecipe?.sourceUrl,
+        sourceUrl: normalizedSourceUrl,
       };
       const savedRecipe = editingRecipe
         ? await updateRecipe(editingRecipe.id, recipeInput, imageChanged)
@@ -254,9 +292,12 @@ export default function AddRecipeScreen() {
   const applyAiDraft = (draft: RecipeAiDraft) => {
     setTitle(draft.title);
     setDescription(draft.subtitle);
+    setCategory(draft.category);
     setMinutes(String(draft.minutes));
     setIngredientText(formatIngredients(draft.ingredients));
     setAiIngredients(draft.ingredients);
+    const importedSourceUrl = normalizeRecipeSourceUrl(sourceText);
+    if (importedSourceUrl) setSourceUrl(importedSourceUrl);
     setWasFilledByAi(true);
     setFormVersion((current) => current + 1);
     setMode('manual');
@@ -318,6 +359,7 @@ export default function AddRecipeScreen() {
           style={styles.scrollView}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}>
           <Text style={styles.eyebrow}>
             {isEditing ? 'RECEPT AANPASSEN' : 'NIEUW IN JULLIE COLLECTIE'}
@@ -347,8 +389,6 @@ export default function AddRecipeScreen() {
                 setSelectedImage(null);
                 setImageChanged(true);
               }}
-              onExtract={() => void fillWithAi()}
-              isExtracting={isExtracting}
             />
           ) : (
             <View key={formVersion}>
@@ -402,6 +442,51 @@ export default function AddRecipeScreen() {
                   accessibilityLabel="Korte omschrijving"
                 />
 
+                <Text style={styles.label}>Link naar het originele recept</Text>
+                <TextInput
+                  ref={sourceUrlInputRef}
+                  value={sourceUrl}
+                  onChangeText={setSourceUrl}
+                  placeholder="https://voorbeeld.nl/recept"
+                  placeholderTextColor={palette.textSoft}
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  style={styles.input}
+                  accessibilityLabel="Link naar het originele recept, optioneel"
+                />
+                <Text style={styles.fieldHint}>
+                  Optioneel. Maak het veld leeg om een bestaande link te verwijderen.
+                </Text>
+
+                <Text style={styles.label}>Categorie</Text>
+                <View style={styles.categoryOptions}>
+                  {recipeCategories.map((option) => {
+                    const selected = category === option;
+                    return (
+                      <Pressable
+                        key={option}
+                        onPress={() => setCategory(option)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: selected }}
+                        style={({ pressed }) => [
+                          styles.categoryPill,
+                          selected && styles.categoryPillSelected,
+                          pressed && styles.pressed,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.categoryPillText,
+                            selected && styles.categoryPillTextSelected,
+                          ]}>
+                          {option}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
                 <Text style={styles.label}>Bereidingstijd</Text>
                 <View style={styles.timeRow}>
                   <TextInput
@@ -445,8 +530,12 @@ export default function AddRecipeScreen() {
             </View>
           )}
         </ScrollView>
-        {mode === 'manual' ? (
-          <View style={styles.stickyFooter}>
+      </KeyboardAvoidingView>
+      <View style={[styles.floatingFooter, { bottom: keyboardHeight }]}>
+        {mode === 'ai' ? (
+          <AiExtractButton onPress={() => void fillWithAi()} isExtracting={isExtracting} />
+        ) : (
+          <>
             {canDeleteRecipe ? (
               <Pressable
                 onPress={confirmRecipeRemoval}
@@ -488,10 +577,46 @@ export default function AddRecipeScreen() {
                 </Text>
               )}
             </Pressable>
-          </View>
-        ) : null}
-      </KeyboardAvoidingView>
+          </>
+        )}
+      </View>
     </SafeAreaView>
+  );
+}
+
+function AiExtractButton({
+  onPress,
+  isExtracting,
+}: {
+  onPress: () => void;
+  isExtracting: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={isExtracting}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isExtracting }}
+      style={({ pressed }) => [
+        styles.saveButton,
+        styles.aiActionButton,
+        isExtracting && styles.disabledButton,
+        pressed && styles.pressed,
+      ]}>
+      {isExtracting ? (
+        <ActivityIndicator color={palette.white} />
+      ) : (
+        <>
+          <AppIcon
+            name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+            tintColor={palette.white}
+            fallback="✦"
+            size={18}
+          />
+          <Text style={styles.saveButtonText}>Laat AI het recept invullen</Text>
+        </>
+      )}
+    </Pressable>
   );
 }
 
@@ -525,8 +650,6 @@ function AiImportPanel({
   onCamera,
   onLibrary,
   onRemoveImage,
-  onExtract,
-  isExtracting,
 }: {
   sourceText: string;
   onChangeSourceText: (value: string) => void;
@@ -534,8 +657,6 @@ function AiImportPanel({
   onCamera: () => void;
   onLibrary: () => void;
   onRemoveImage: () => void;
-  onExtract: () => void;
-  isExtracting: boolean;
 }) {
   return (
     <View style={styles.aiPanel}>
@@ -581,30 +702,6 @@ function AiImportPanel({
         title="Foto laten uitlezen"
         subtitle="Gebruik een screenshot, kookboekpagina of foto van het gerecht."
       />
-
-      <Pressable
-        onPress={onExtract}
-        disabled={isExtracting}
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          styles.aiButton,
-          isExtracting && styles.disabledButton,
-          pressed && styles.pressed,
-        ]}>
-        {isExtracting ? (
-          <ActivityIndicator color={palette.white} />
-        ) : (
-          <>
-            <AppIcon
-              name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
-              tintColor={palette.white}
-              fallback="✦"
-              size={18}
-            />
-            <Text style={styles.aiButtonText}>Laat AI het recept invullen</Text>
-          </>
-        )}
-      </Pressable>
     </View>
   );
 }
@@ -692,7 +789,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   keyboardView: { flex: 1 },
   scrollView: { flex: 1 },
-  content: { padding: spacing.xl, paddingBottom: spacing.xl },
+  content: { padding: spacing.xl, paddingBottom: 104 },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   title: { color: palette.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.7, marginTop: 6 },
   subtitle: { color: palette.textMuted, fontSize: 15, lineHeight: 20, marginTop: 6 },
@@ -712,9 +809,22 @@ const styles = StyleSheet.create({
   setupText: { color: palette.textMuted, fontSize: 11, lineHeight: 16, marginTop: 4 },
   formSection: { gap: spacing.sm, marginTop: spacing.xl },
   label: { color: palette.text, fontSize: 13, fontWeight: '700', marginTop: spacing.md },
+  fieldHint: { color: palette.textMuted, fontSize: 12, lineHeight: 17, marginTop: spacing.xs },
   input: { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: radius.md, borderWidth: 1, color: palette.text, fontSize: 16, minHeight: 52, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   sourceInput: { minHeight: 104 },
   descriptionInput: { minHeight: 76 },
+  categoryOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  categoryPill: {
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  categoryPillSelected: { backgroundColor: palette.sageDark, borderColor: palette.sageDark },
+  categoryPillText: { color: palette.textMuted, fontSize: 13, fontWeight: '700' },
+  categoryPillTextSelected: { color: palette.white },
   timeRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md },
   timeInput: { textAlign: 'center', width: 88 },
   timeUnit: { color: palette.textMuted, fontSize: 14 },
@@ -729,8 +839,6 @@ const styles = StyleSheet.create({
   smallAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   smallActionText: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
   removeText: { color: palette.danger, fontSize: 12, fontWeight: '700' },
-  aiButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', marginTop: spacing.xl, minHeight: 54, paddingHorizontal: spacing.xl },
-  aiButtonText: { color: palette.white, fontSize: 14, fontWeight: '700' },
   disabledButton: { opacity: 0.65 },
   aiSuccessCard: { alignItems: 'center', backgroundColor: palette.sageSoft, borderRadius: radius.lg, flexDirection: 'row', marginTop: spacing.xl, padding: spacing.md },
   aiSuccessCopy: { flex: 1, marginLeft: spacing.md },
@@ -751,15 +859,19 @@ const styles = StyleSheet.create({
   ingredientName: { color: palette.text, fontSize: 14, fontWeight: '600' },
   department: { color: palette.textMuted, fontSize: 11, marginTop: 4 },
   amount: { color: palette.sageDark, fontSize: 12, fontWeight: '700' },
-  stickyFooter: {
+  floatingFooter: {
     alignItems: 'center',
     backgroundColor: palette.background,
     borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: spacing.md,
+    left: 0,
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
+    paddingVertical: spacing.md,
+    position: 'absolute',
+    right: 0,
+    zIndex: 10,
   },
   deleteButton: {
     alignItems: 'center',
@@ -772,6 +884,7 @@ const styles = StyleSheet.create({
     width: 54,
   },
   saveButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, flex: 1, minHeight: 54, justifyContent: 'center', paddingVertical: 16 },
+  aiActionButton: { flexDirection: 'row', gap: spacing.sm },
   saveButtonText: { color: palette.white, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.72 },
   notFound: { color: palette.text, fontSize: 16, padding: spacing.xl },

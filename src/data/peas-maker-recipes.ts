@@ -1,4 +1,4 @@
-import type { Recipe } from '@/data/mock-data';
+import { defaultRecipeCategory, type Recipe } from '@/data/mock-data';
 
 // Gegenereerd uit https://www.peasmaker.nl/pages/recepten op 2026-08-04.
 // Alleen gestructureerde receptgegevens worden bewaard; voor de volledige bereiding opent Tably de bron.
@@ -82,7 +82,7 @@ const peasMakerImages: Record<string, Recipe['image']> = {
   "vegan-sate-bladerdeeghapjes": require('@/assets/images/peas-maker/vegan-sate-bladerdeeghapjes.jpg'),
 };
 
-const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
+const peasMakerRecipeData: (Omit<Recipe, 'image' | 'category'> & { imageKey: string })[] = [
   {
     "id": "peasmaker-broccoli-met-venkelgehakt",
     "clientKey": "peasmaker-broccoli-met-venkelgehakt",
@@ -96,7 +96,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-broccoli-met-venkelgehakt-2",
@@ -258,7 +258,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-chili-sin-carne-2",
@@ -437,7 +437,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 75,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-orzopasta-8",
@@ -483,7 +483,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "klontje plantaardige boter",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-zuurvlees-2",
@@ -588,7 +588,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-zuurvlees-17",
@@ -613,14 +613,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-butter-chicken-2",
         "name": "plantaardige yoghurt",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-butter-chicken-3",
@@ -683,7 +683,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Klontje plantaardige boter",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-butter-chicken-12",
@@ -778,14 +778,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 75,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-pasteitjes-2",
         "name": "klontjes plantaardige boter",
         "amount": 2,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-pasteitjes-3",
@@ -848,7 +848,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige room",
         "amount": 2,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-pasteitjes-12",
@@ -887,7 +887,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-gyros-2",
@@ -989,7 +989,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-quinoa-salade-2",
@@ -1168,7 +1168,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-cashew-2",
@@ -1291,7 +1291,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-shoarma-2",
@@ -1547,7 +1547,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-cacciatore-7",
@@ -1621,7 +1621,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bolognese-2",
@@ -1635,7 +1635,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 2,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bolognese-4",
@@ -1726,7 +1726,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige melk",
         "amount": 150,
         "unit": "ml",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bolognese-17",
@@ -1758,14 +1758,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-amerikaanse-salade-2",
         "name": "plantaardige yoghurt",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-amerikaanse-salade-3",
@@ -1846,7 +1846,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-mac-and-cheese-2",
@@ -1909,7 +1909,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige melk",
         "amount": 500,
         "unit": "ml",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-mac-and-cheese-11",
@@ -2025,7 +2025,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-kapuska-11",
@@ -2053,14 +2053,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige yoghurt",
         "amount": 6,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-kapuska-15",
         "name": "vegan mayonaise",
         "amount": 3,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-kapuska-16",
@@ -2092,7 +2092,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 6,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kippensoep-2",
@@ -2148,7 +2148,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kippensoep-10",
@@ -2215,7 +2215,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sushi-bowl-2",
@@ -2306,7 +2306,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 2,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sushi-bowl-15",
@@ -2338,7 +2338,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 6,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-broodje-vegan-tonijnsalade-2",
@@ -2510,7 +2510,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-hartige-taart-16",
@@ -2556,7 +2556,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-vol-au-vent-2",
@@ -2605,7 +2605,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 40,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-vol-au-vent-9",
@@ -2686,7 +2686,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-kerrie-noedels-6",
@@ -2802,7 +2802,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 150,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sate-curry-11",
@@ -2883,7 +2883,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-panang-curry-7",
@@ -3010,7 +3010,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-broodje-2",
@@ -3080,7 +3080,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Vegan kaasplakjes",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       }
     ],
     "sourceUrl": "https://www.peasmaker.nl/blogs/alle/vegan-kip-broodje"
@@ -3154,14 +3154,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige yoghurt",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-taco-salade-10",
         "name": "vegan mayonaise",
         "amount": 2,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-taco-salade-11",
@@ -3305,7 +3305,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-caribische-curry-13",
@@ -3421,7 +3421,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bobotie-12",
@@ -3449,7 +3449,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige yoghurt, naar keuze",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bobotie-16",
@@ -3498,7 +3498,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 20,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       }
     ],
     "sourceUrl": "https://www.peasmaker.nl/blogs/alle/vegan-bobotie"
@@ -3607,7 +3607,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-korma-curry-15",
@@ -3628,7 +3628,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "kokosyoghurt",
         "amount": 4,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       }
     ],
     "sourceUrl": "https://www.peasmaker.nl/blogs/alle/vegan-korma-curry"
@@ -3646,7 +3646,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-babi-pangang-2",
@@ -3730,7 +3730,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Klontje plantaardige boter",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-babi-pangang-14",
@@ -3790,7 +3790,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 1,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-hachee-2",
@@ -3895,7 +3895,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-hachee-17",
@@ -3920,7 +3920,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-saucijzenbroodje-2",
@@ -3987,7 +3987,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-haggisballen-2",
@@ -4078,7 +4078,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 25,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-haggisballen-15",
@@ -4173,7 +4173,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-makreelrillette-7",
@@ -4208,7 +4208,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 3,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-makreelrillette-12",
@@ -4352,7 +4352,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-pasta-ragu-14",
@@ -4398,7 +4398,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-massaman-curry-4",
@@ -4472,7 +4472,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-noedels-met-broccoli-4",
@@ -4609,7 +4609,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-shepherd-s-pie-10",
@@ -4630,14 +4630,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-shepherd-s-pie-13",
         "name": "plantaardige melk",
         "amount": 50,
         "unit": "ml",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-shepherd-s-pie-14",
@@ -4736,7 +4736,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-moussaka-2",
@@ -4841,7 +4841,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-moussaka-17",
@@ -4855,7 +4855,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige melk",
         "amount": 500,
         "unit": "ml",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-moussaka-19",
@@ -4894,7 +4894,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-pasteitjes-2",
@@ -4978,7 +4978,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-pasteitjes-14",
@@ -5052,7 +5052,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 4,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kapsalon-7",
@@ -5098,14 +5098,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 40,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bitterballen-2",
         "name": "plantaardige boter",
         "amount": 55,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bitterballen-3",
@@ -5172,7 +5172,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-filodeeghapje-2",
@@ -5274,7 +5274,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-banh-mi-6",
@@ -5337,7 +5337,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Vegan Mayonaise",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-banh-mi-15",
@@ -5369,7 +5369,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-souvlaki-2",
@@ -5453,7 +5453,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "stevige plantaardige yoghurt",
         "amount": 150,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-souvlaki-14",
@@ -5506,7 +5506,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 30,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-huzarensalade-2",
@@ -5590,7 +5590,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 100,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-huzarensalade-14",
@@ -5692,7 +5692,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-roti-13",
@@ -5738,7 +5738,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-ramen-5",
@@ -5875,7 +5875,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-zoetzure-kip-10",
@@ -6051,7 +6051,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kipstukjes-2",
@@ -6153,14 +6153,14 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 25,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sushi-2",
         "name": "vegan mayonaise",
         "amount": 2,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sushi-3",
@@ -6304,7 +6304,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-burrito-14",
@@ -6392,7 +6392,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 20,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-kerrie-salade-2",
@@ -6441,7 +6441,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 4,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-kip-kerrie-salade-9",
@@ -6466,7 +6466,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sloppy-joes-2",
@@ -6585,7 +6585,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sloppy-joes-19",
@@ -6627,7 +6627,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Plantaardige boter",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       }
     ],
     "sourceUrl": "https://www.peasmaker.nl/blogs/alle/vegan-sloppy-joes"
@@ -6645,7 +6645,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-sate-2",
@@ -6782,7 +6782,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-pizza-7",
@@ -6891,7 +6891,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-groene-curry-6",
@@ -6958,7 +6958,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-fajita-2",
@@ -7102,7 +7102,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bulgogi-2",
@@ -7190,7 +7190,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 40,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-carbonara-2",
@@ -7376,7 +7376,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-bapao-15",
@@ -7408,7 +7408,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 60,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-griekse-ovenschotel-2",
@@ -7489,7 +7489,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-risotto-2",
@@ -7717,7 +7717,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-tikka-masala-16",
@@ -7763,7 +7763,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-caesar-salad-5",
@@ -7812,7 +7812,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-caesar-salad-12",
@@ -7872,7 +7872,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-burger-2",
@@ -7956,7 +7956,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Plantaardige olie en plantaardige boter",
         "amount": 1,
         "unit": "stuk",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       }
     ],
     "sourceUrl": "https://www.peasmaker.nl/blogs/alle/vegan-burger"
@@ -7974,7 +7974,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-lasagne-2",
@@ -8058,7 +8058,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "plantaardige boter",
         "amount": 50,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-lasagne-14",
@@ -8072,7 +8072,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "havermelk",
         "amount": 600,
         "unit": "ml",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-lasagne-16",
@@ -8125,7 +8125,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-rendang-4",
@@ -8201,7 +8201,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 40,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-tonijnsalade-3",
@@ -8229,7 +8229,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "vegan mayonaise",
         "amount": 3,
         "unit": "el",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-vegan-tonijnsalade-7",
@@ -8345,7 +8345,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "Peas Maker Stukjes",
         "amount": 80,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-handi-curry-12",
@@ -8359,7 +8359,7 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
         "name": "kokosyoghurt",
         "amount": 125,
         "unit": "g",
-        "department": "Vega en plantaardig"
+        "department": "Vlees, vis en vega"
       },
       {
         "id": "peasmaker-handi-curry-14",
@@ -8392,5 +8392,6 @@ const peasMakerRecipeData: (Omit<Recipe, 'image'> & { imageKey: string })[] = [
 
 export const peasMakerRecipes: Recipe[] = peasMakerRecipeData.map(({ imageKey, ...recipe }) => ({
   ...recipe,
+  category: defaultRecipeCategory,
   image: peasMakerImages[imageKey],
 }));

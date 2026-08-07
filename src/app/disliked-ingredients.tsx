@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
@@ -24,11 +24,25 @@ import { useMealMate } from '@/state/meal-mate-provider';
 
 export default function DislikedIngredientsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { recipes, dislikedIngredientNames, saveDislikedIngredientNames } = useMealMate();
   const [query, setQuery] = useState('');
   const [selectedNames, setSelectedNames] = useState(() => new Set(dislikedIngredientNames));
   const [isSaving, setIsSaving] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const ingredientOptions = useMemo(() => {
     const names = new Map<string, string>();
@@ -89,7 +103,7 @@ export default function DislikedIngredientsScreen() {
           keyExtractor={(item) => item.value}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          contentContainerStyle={[styles.content, { paddingBottom: 104 + insets.bottom }]}
+          contentContainerStyle={styles.content}
           ListHeaderComponent={
             <View>
               <Text style={styles.eyebrow}>JOUW SMAAK</Text>
@@ -156,21 +170,21 @@ export default function DislikedIngredientsScreen() {
             );
           }}
         />
-        <View style={[styles.saveBar, { paddingBottom: spacing.md + insets.bottom }]}>
-          <Pressable
-            onPress={() => void save()}
-            disabled={isSaving}
-            accessibilityRole="button"
-            accessibilityLabel="Ingrediëntvoorkeuren bewaren"
-            style={({ pressed }) => [styles.saveButton, (pressed || isSaving) && styles.pressed]}>
-            {isSaving ? (
-              <ActivityIndicator color={palette.white} />
-            ) : (
-              <Text style={styles.saveButtonText}>Bewaar voorkeuren</Text>
-            )}
-          </Pressable>
-        </View>
       </KeyboardAvoidingView>
+      <View style={[styles.saveBar, { bottom: keyboardHeight }]}>
+        <Pressable
+          onPress={() => void save()}
+          disabled={isSaving}
+          accessibilityRole="button"
+          accessibilityLabel="Ingrediëntvoorkeuren bewaren"
+          style={({ pressed }) => [styles.saveButton, (pressed || isSaving) && styles.pressed]}>
+          {isSaving ? (
+            <ActivityIndicator color={palette.white} />
+          ) : (
+            <Text style={styles.saveButtonText}>Bewaar voorkeuren</Text>
+          )}
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -179,7 +193,7 @@ const styles = StyleSheet.create({
   safeArea: { backgroundColor: palette.background, flex: 1 },
   keyboardView: { flex: 1 },
   list: { flex: 1 },
-  content: { padding: spacing.xl },
+  content: { padding: spacing.xl, paddingBottom: 104 },
   eyebrow: { color: palette.sage, fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   title: {
     color: palette.text,
@@ -244,12 +258,12 @@ const styles = StyleSheet.create({
     backgroundColor: palette.background,
     borderTopColor: palette.border,
     borderTopWidth: 1,
-    bottom: 0,
     left: 0,
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.md,
+    paddingVertical: spacing.md,
     position: 'absolute',
     right: 0,
+    zIndex: 10,
   },
   saveButton: {
     alignItems: 'center',

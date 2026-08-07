@@ -1,6 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,16 +16,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppIcon } from '@/components/mealmate/app-icon';
 import { ModalScreenHeader } from '@/components/mealmate/modal-screen-header';
 import { palette, radius, shadow, spacing } from '@/constants/mealmate-theme';
+import { recipeCategories, type RecipeCategory } from '@/data/mock-data';
 import {
+  emptyRecipeFilters,
   formatIngredientName,
   normalizeIngredientName,
   recipeMatchesFilters,
+  type RecipeSort,
 } from '@/lib/recipe-filters';
 import { useMealMate } from '@/state/meal-mate-provider';
 import { useRecipeFilters } from '@/state/recipe-filter-provider';
 
 const ratingOptions = [2, 3, 4, 5];
 const timeOptions = [15, 30, 45, 60];
+const sortOptions: { label: string; value: RecipeSort }[] = [
+  { label: 'Nieuwste', value: 'newest' },
+  { label: 'Alfabetisch', value: 'alphabetical' },
+  { label: 'Mijn rating', value: 'personal-rating' },
+  { label: 'Rating samen', value: 'household-rating' },
+];
 
 type IngredientOption = {
   count: number;
@@ -33,10 +45,27 @@ type IngredientOption = {
 export default function RecipeFiltersScreen() {
   const router = useRouter();
   const { day } = useLocalSearchParams<{ day?: string }>();
-  const { recipes, ratings, familyMembers, mealAttendance } = useMealMate();
+  const { recipes, ratings, familyMembers, mealAttendance, hiddenRecipeIds } = useMealMate();
   const { filters, setFilters } = useRecipeFilters();
   const [draft, setDraft] = useState(filters);
   const [ingredientQuery, setIngredientQuery] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const defaultSort: RecipeSort = day ? 'household-rating' : 'newest';
+  const selectedSort = draft.sortBy ?? defaultSort;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const ingredientOptions = useMemo(() => {
     const unique = new Map<string, IngredientOption>();
@@ -83,15 +112,19 @@ export default function RecipeFiltersScreen() {
   );
 
   const resultCount = useMemo(
-    () => recipes.filter((recipe) =>
-      recipeMatchesFilters(
-        recipe,
-        draft,
-        ratings,
-        eatingMemberIds,
-      ),
-    ).length,
-    [draft, eatingMemberIds, ratings, recipes],
+    () => {
+      const hiddenIds = new Set(hiddenRecipeIds);
+      return recipes.filter((recipe) =>
+        (draft.showHidden || !hiddenIds.has(recipe.id))
+        && recipeMatchesFilters(
+          recipe,
+          draft,
+          ratings,
+          eatingMemberIds,
+        ),
+      ).length;
+    },
+    [draft, eatingMemberIds, hiddenRecipeIds, ratings, recipes],
   );
 
   const toggleIngredient = (ingredient: string) => {
@@ -103,15 +136,16 @@ export default function RecipeFiltersScreen() {
     }));
   };
 
-  const clear = () => setDraft({
-    ingredientNames: [],
-    minimumHouseholdRating: null,
-    memberId: null,
-    minimumMemberRating: null,
-    neverRated: false,
-    maximumMinutes: null,
-    quickAndEasy: false,
-  });
+  const toggleCategory = (category: RecipeCategory) => {
+    setDraft((current) => ({
+      ...current,
+      categories: current.categories.includes(category)
+        ? current.categories.filter((item) => item !== category)
+        : [...current.categories, category],
+    }));
+  };
+
+  const clear = () => setDraft(emptyRecipeFilters);
 
   const apply = () => {
     setFilters(draft);
@@ -120,15 +154,24 @@ export default function RecipeFiltersScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <ModalScreenHeader title="Recepten filteren" closeLabel="Filteren sluiten" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
+      <ModalScreenHeader
+        title="Filteren en sorteren"
+        closeLabel="Filteren en sorteren sluiten"
+      />
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
         <View style={styles.introRow}>
           <View style={styles.introCopy}>
             <Text style={styles.title}>Waar hebben jullie zin in?</Text>
-            <Text style={styles.subtitle}>Combineer filters om sneller bij een passend gerecht te komen.</Text>
+            <Text style={styles.subtitle}>
+              Kies de volgorde en combineer filters om sneller bij een passend gerecht te komen.
+            </Text>
           </View>
           <Pressable
             onPress={clear}
@@ -138,6 +181,43 @@ export default function RecipeFiltersScreen() {
             <Text style={styles.clearButtonText}>Wis alles</Text>
           </Pressable>
         </View>
+
+        <FilterSection
+          title="Sorteren op"
+          subtitle="Kies in welke volgorde de recepten worden getoond.">
+          <View style={styles.optionWrap} accessibilityRole="radiogroup">
+            {sortOptions.map((option) => (
+              <ChoicePill
+                key={option.value}
+                label={option.label}
+                selected={selectedSort === option.value}
+                onPress={() => setDraft((current) => ({
+                  ...current,
+                  sortBy: option.value === defaultSort ? null : option.value,
+                }))}
+              />
+            ))}
+          </View>
+        </FilterSection>
+
+        <FilterSection
+          title="Categorie"
+          subtitle="Kies één of meer soorten gerechten.">
+          <View style={styles.optionWrap}>
+            {recipeCategories.map((category) => {
+              const count = recipes.filter((recipe) => recipe.category === category).length;
+              return (
+                <ChoicePill
+                  key={category}
+                  label={category}
+                  count={count}
+                  selected={draft.categories.includes(category)}
+                  onPress={() => toggleCategory(category)}
+                />
+              );
+            })}
+          </View>
+        </FilterSection>
 
         <FilterSection
           title="Ingrediënten"
@@ -271,9 +351,26 @@ export default function RecipeFiltersScreen() {
             }))}
           />
         </FilterSection>
-      </ScrollView>
 
-      <View style={styles.footer}>
+        {hiddenRecipeIds.length > 0 ? (
+          <FilterSection
+            title="Zichtbaarheid"
+            subtitle={`${hiddenRecipeIds.length} ${hiddenRecipeIds.length === 1 ? 'gerecht is' : 'gerechten zijn'} verborgen.`}>
+            <ToggleRow
+              title="Toon verborgen gerechten"
+              description="Laat verborgen gerechten weer in de resultaten zien."
+              selected={draft.showHidden}
+              onPress={() => setDraft((current) => ({
+                ...current,
+                showHidden: !current.showHidden,
+              }))}
+            />
+          </FilterSection>
+        ) : null}
+        </ScrollView>
+
+      </KeyboardAvoidingView>
+      <View style={[styles.footer, { bottom: keyboardHeight }]}>
         <Pressable
           onPress={apply}
           accessibilityRole="button"
@@ -377,7 +474,8 @@ function ToggleRow({
 
 const styles = StyleSheet.create({
   safeArea: { backgroundColor: palette.background, flex: 1 },
-  content: { gap: spacing.md, padding: spacing.xl, paddingBottom: spacing.xxxl },
+  keyboardView: { flex: 1 },
+  content: { gap: spacing.md, padding: spacing.xl, paddingBottom: 104 },
   introRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.md },
   introCopy: { flex: 1 },
   title: { color: palette.text, fontSize: 24, fontWeight: '800' },
@@ -439,7 +537,11 @@ const styles = StyleSheet.create({
     backgroundColor: palette.surface,
     borderTopColor: palette.border,
     borderTopWidth: 1,
+    left: 0,
     padding: spacing.lg,
+    position: 'absolute',
+    right: 0,
+    zIndex: 10,
   },
   applyButton: {
     alignItems: 'center',

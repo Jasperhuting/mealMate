@@ -31,6 +31,11 @@ export type SharedState = {
   shoppingDepartments: Record<string, Department>;
 };
 
+export type CloudShoppingState = Pick<
+  SharedState,
+  'completedShoppingIds' | 'manualShoppingItems' | 'shoppingDepartments'
+>;
+
 export type ManualShoppingItem = {
   id: string;
   name: string;
@@ -298,6 +303,73 @@ export async function removeCloudMealPlan(day: WeekDay, mealPlanId?: string) {
   if (error) throw error;
 }
 
+export async function moveCloudMealPlan(
+  sourceDay: WeekDay,
+  targetDay: WeekDay,
+  sourceMealPlanId: string,
+  targetMealPlanId?: string,
+) {
+  if (!supabase || sourceDay.isoDate === targetDay.isoDate) return;
+  const householdId = await ensureMealMateHousehold();
+
+  const { data: movedSource, error: sourceError } = await supabase
+    .from('meal_plans')
+    .update({ planned_for: targetDay.isoDate })
+    .eq('id', sourceMealPlanId)
+    .eq('household_id', householdId)
+    .eq('planned_for', sourceDay.isoDate)
+    .select('id')
+    .maybeSingle();
+  if (sourceError || !movedSource) {
+    throw sourceError ?? new Error('Het gerecht staat niet meer op de gekozen dag.');
+  }
+
+  if (targetMealPlanId) {
+    const { data: movedTarget, error: targetError } = await supabase
+      .from('meal_plans')
+      .update({ planned_for: sourceDay.isoDate })
+      .eq('id', targetMealPlanId)
+      .eq('household_id', householdId)
+      .eq('planned_for', targetDay.isoDate)
+      .select('id')
+      .maybeSingle();
+
+    if (targetError || !movedTarget) {
+      await supabase
+        .from('meal_plans')
+        .update({ planned_for: sourceDay.isoDate })
+        .eq('id', sourceMealPlanId)
+        .eq('household_id', householdId)
+        .eq('planned_for', targetDay.isoDate);
+      throw targetError ?? new Error('Het andere gerecht staat niet meer op de gekozen dag.');
+    }
+  }
+
+  const sourceWeekStart = getWeekStartForDate(sourceDay.isoDate);
+  const targetWeekStart = getWeekStartForDate(targetDay.isoDate);
+  if (sourceWeekStart !== targetWeekStart) {
+    const updates = [
+      supabase
+        .from('shopping_items')
+        .update({ week_start: targetWeekStart })
+        .eq('household_id', householdId)
+        .eq('meal_plan_id', sourceMealPlanId),
+    ];
+    if (targetMealPlanId) {
+      updates.push(
+        supabase
+          .from('shopping_items')
+          .update({ week_start: sourceWeekStart })
+          .eq('household_id', householdId)
+          .eq('meal_plan_id', targetMealPlanId),
+      );
+    }
+    const results = await Promise.all(updates);
+    const shoppingError = results.find((result) => result.error)?.error;
+    if (shoppingError) throw shoppingError;
+  }
+}
+
 export async function saveCloudRating(recipeId: string, personId: string, score: number) {
   if (!supabase) return;
   const { error } = await supabase.from('household_recipe_ratings').upsert(
@@ -530,6 +602,110 @@ export async function removeCloudShoppingItem(name: string, unit: string, weekSt
   if (error) throw error;
 }
 
+async function queryCloudShoppingState(
+  householdId: string,
+  days: WeekDay[],
+  plans: QueryPlan[],
+): Promise<CloudShoppingState> {
+  const activePlanIds = plans
+    .filter((plan) => plan.planned_for >= getTodayIso())
+    .map((plan) => plan.id);
+  const checkedGroups = new Map<string, boolean[]>();
+  const shoppingDepartments: Record<string, Department> = {};
+  if (activePlanIds.length > 0) {
+    const { data: shoppingRows, error: shoppingError } = await supabase!
+      .from('shopping_items')
+      .select('name, unit, department, is_checked')
+      .in('meal_plan_id', activePlanIds);
+    if (shoppingError) throw shoppingError;
+    for (const item of shoppingRows ?? []) {
+      const id = shoppingId(item.name, item.unit || '');
+      checkedGroups.set(id, [...(checkedGroups.get(id) ?? []), item.is_checked]);
+      shoppingDepartments[id] = normalizeDepartment(item.department);
+    }
+  }
+
+  const { data: manualRows, error: manualError } = await supabase!
+    .from('shopping_items')
+    .select('name, quantity, unit, department, is_checked')
+    .eq('household_id', householdId)
+    .eq('week_start', getWeekStart(days))
+    .is('meal_plan_id', null)
+    .order('created_at');
+  if (manualError) throw manualError;
+  for (const item of manualRows ?? []) {
+    const id = shoppingId(item.name, item.unit || '');
+    checkedGroups.set(id, [...(checkedGroups.get(id) ?? []), item.is_checked]);
+    shoppingDepartments[id] = normalizeDepartment(item.department);
+  }
+
+  return {
+    completedShoppingIds: Array.from(checkedGroups.entries())
+      .filter(([, values]) => values.length > 0 && values.every(Boolean))
+      .map(([id]) => id),
+    manualShoppingItems: (manualRows ?? []).map((item) => ({
+      id: shoppingId(item.name, item.unit || ''),
+      name: item.name,
+      amount: Number(item.quantity) || 1,
+      unit: item.unit || '',
+      department: normalizeDepartment(item.department),
+    })),
+    shoppingDepartments,
+  };
+}
+
+export async function loadCloudShoppingState(
+  days: WeekDay[] = initialWeekDays,
+): Promise<CloudShoppingState> {
+  if (!supabase || days.length === 0) {
+    return {
+      completedShoppingIds: [],
+      manualShoppingItems: [],
+      shoppingDepartments: {},
+    };
+  }
+  const householdId = await ensureMealMateHousehold();
+  const plans = await queryPlans(householdId, days);
+  return queryCloudShoppingState(householdId, days, plans);
+}
+
+export async function subscribeToCloudShoppingChanges(onChange: () => void) {
+  if (!supabase) {
+    return {
+      notify: () => Promise.resolve(),
+      unsubscribe: () => Promise.resolve(),
+    };
+  }
+  const client = supabase;
+  const householdId = await ensureMealMateHousehold();
+  const channel = client
+    .channel(`shopping-sync-${householdId}`)
+    .on(
+      'broadcast',
+      { event: 'shopping-changed' },
+      onChange,
+    )
+    .subscribe((status, error) => {
+      if (status === 'SUBSCRIBED') onChange();
+      if (__DEV__ && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+        console.warn('Tably shopping realtime failed', error);
+      }
+    });
+
+  return {
+    notify: async () => {
+      await channel.send({
+        type: 'broadcast',
+        event: 'shopping-changed',
+        payload: {},
+      });
+    },
+    unsubscribe: async () => {
+      await client.removeChannel(channel);
+    },
+  };
+}
+
 export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promise<SharedState> {
   if (!supabase) {
     return {
@@ -601,37 +777,7 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
     ratings[row.recipe_id] = { ...ratings[row.recipe_id], [row.person_id]: row.score };
   }
 
-  const activePlanIds = plans
-    .filter((plan) => plan.planned_for >= getTodayIso())
-    .map((plan) => plan.id);
-  const checkedGroups = new Map<string, boolean[]>();
-  const shoppingDepartments: Record<string, Department> = {};
-  if (activePlanIds.length > 0) {
-    const { data: shoppingRows, error: shoppingError } = await supabase
-      .from('shopping_items')
-      .select('name, unit, department, is_checked')
-      .in('meal_plan_id', activePlanIds);
-    if (shoppingError) throw shoppingError;
-    for (const item of shoppingRows ?? []) {
-      const id = shoppingId(item.name, item.unit || '');
-      checkedGroups.set(id, [...(checkedGroups.get(id) ?? []), item.is_checked]);
-      shoppingDepartments[id] = normalizeDepartment(item.department);
-    }
-  }
-
-  const { data: manualRows, error: manualError } = await supabase
-    .from('shopping_items')
-    .select('name, quantity, unit, department, is_checked')
-    .eq('household_id', householdId)
-    .eq('week_start', getWeekStart(days))
-    .is('meal_plan_id', null)
-    .order('created_at');
-  if (manualError) throw manualError;
-  for (const item of manualRows ?? []) {
-    const id = shoppingId(item.name, item.unit || '');
-    checkedGroups.set(id, [...(checkedGroups.get(id) ?? []), item.is_checked]);
-    shoppingDepartments[id] = normalizeDepartment(item.department);
-  }
+  const shoppingState = await queryCloudShoppingState(householdId, days, plans);
 
   return {
     plannedMeals,
@@ -650,16 +796,6 @@ export async function loadSharedState(days: WeekDay[] = initialWeekDays): Promis
       avatarUrl: person.avatar_url ?? undefined,
     })),
     mealAttendance,
-    completedShoppingIds: Array.from(checkedGroups.entries())
-      .filter(([, values]) => values.length > 0 && values.every(Boolean))
-      .map(([id]) => id),
-    manualShoppingItems: (manualRows ?? []).map((item) => ({
-      id: shoppingId(item.name, item.unit || ''),
-      name: item.name,
-      amount: Number(item.quantity) || 1,
-      unit: item.unit || '',
-      department: normalizeDepartment(item.department),
-    })),
-    shoppingDepartments,
+    ...shoppingState,
   };
 }

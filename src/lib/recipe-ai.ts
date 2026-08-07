@@ -1,4 +1,10 @@
-import { normalizeDepartment, type Department, type Ingredient } from '@/data/mock-data';
+import {
+  normalizeDepartment,
+  normalizeRecipeCategory,
+  type Department,
+  type Ingredient,
+  type RecipeCategory,
+} from '@/data/mock-data';
 import { normalizeIngredientQuantity } from '@/lib/ingredient-parser';
 import { ensureMealMateSession } from '@/lib/mealmate-session';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
@@ -13,6 +19,7 @@ type AiIngredient = {
 type AiRecipeResponse = {
   title: string;
   subtitle: string;
+  category: RecipeCategory;
   minutes: number;
   ingredients: AiIngredient[];
 };
@@ -76,6 +83,7 @@ export async function extractRecipeWithAi(input: RecipeAiInput): Promise<RecipeA
   return {
     title: data.title,
     subtitle: data.subtitle,
+    category: normalizeRecipeCategory(data.category),
     minutes: data.minutes,
     ingredients: data.ingredients.map((ingredient, index) =>
       normalizeIngredientQuantity({

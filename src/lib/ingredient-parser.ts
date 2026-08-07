@@ -56,7 +56,8 @@ const departmentKeywords: [Department, string[]][] = [
     'Vlees, vis en vega',
     [
       'biefstuk', 'gehakt', 'hamburger', 'kip', 'kotelet', 'rund', 'varken', 'vis',
-      'vlees', 'zalm',
+      'vlees', 'zalm', 'falafel', 'plantaardig', 'seitan', 'tempeh', 'tofu', 'vega',
+      'vegetarisch',
     ],
   ],
   [
@@ -69,10 +70,6 @@ const departmentKeywords: [Department, string[]][] = [
   [
     'Zuivel, boter en eieren',
     ['boter', 'crème fraîche', 'ei', 'melk', 'kwark', 'room', 'yoghurt'],
-  ],
-  [
-    'Vega en plantaardig',
-    ['falafel', 'plantaardig', 'seitan', 'tempeh', 'tofu', 'vega', 'vegetarisch'],
   ],
   [
     'Wereldkeukens, kruiden, pasta en rijst',

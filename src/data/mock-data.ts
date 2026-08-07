@@ -8,7 +8,6 @@ export const jumboDepartments = [
   'Brood en gebak',
   'Zuivel, boter en eieren',
   'Vleeswaren, kaas en tapas',
-  'Vega en plantaardig',
   'Conserven, soepen, sauzen, oliën',
   'Wereldkeukens, kruiden, pasta en rijst',
   'Ontbijt, broodbeleg en bakproducten',
@@ -33,6 +32,7 @@ const legacyDepartments: Record<string, Department> = {
   Koeling: 'Zuivel, boter en eieren',
   'Pasta, rijst & wereldkeuken': 'Wereldkeukens, kruiden, pasta en rijst',
   'Kruiden & houdbaar': 'Conserven, soepen, sauzen, oliën',
+  'Vega en plantaardig': 'Vlees, vis en vega',
 };
 
 export const normalizeDepartment = (value: string): Department =>
@@ -48,12 +48,32 @@ export type Ingredient = {
   department: Department;
 };
 
+export const recipeCategories = [
+  'Ontbijt',
+  'Lunch',
+  'Voorgerecht',
+  'Hoofdgerecht',
+  'Bijgerecht',
+  'Dessert',
+  'Tussendoortje',
+] as const;
+
+export type RecipeCategory = (typeof recipeCategories)[number];
+
+export const defaultRecipeCategory: RecipeCategory = 'Hoofdgerecht';
+
+export const normalizeRecipeCategory = (value?: string | null): RecipeCategory =>
+  recipeCategories.includes(value as RecipeCategory)
+    ? (value as RecipeCategory)
+    : defaultRecipeCategory;
+
 export type Recipe = {
   id: string;
   clientKey?: string;
   createdAt?: string;
   title: string;
   subtitle: string;
+  category: RecipeCategory;
   minutes: number;
   image: ImageSource | null;
   ingredients: Ingredient[];
@@ -94,6 +114,7 @@ export const recipes: Recipe[] = [
     id: 'risotto',
     title: 'Paddenstoelenrisotto',
     subtitle: 'Romig, hartig en favoriet van jullie allebei',
+    category: defaultRecipeCategory,
     minutes: 35,
     image: require('@/assets/images/meals/risotto.webp'),
     ingredients: [
@@ -109,6 +130,7 @@ export const recipes: Recipe[] = [
     id: 'curry',
     title: 'Thaise groene curry',
     subtitle: 'Fris, licht pittig en snel op tafel',
+    category: defaultRecipeCategory,
     minutes: 30,
     image: null,
     ingredients: [
@@ -123,6 +145,7 @@ export const recipes: Recipe[] = [
     id: 'pesto',
     title: 'Pasta pesto',
     subtitle: 'Een makkelijke doordeweekse klassieker',
+    category: defaultRecipeCategory,
     minutes: 20,
     image: require('@/assets/images/meals/pasta-pesto.webp'),
     ingredients: [
@@ -137,6 +160,7 @@ export const recipes: Recipe[] = [
     id: 'tart',
     title: 'Plaattaart met geitenkaas',
     subtitle: 'Knapperig met biet en zachte geitenkaas',
+    category: defaultRecipeCategory,
     minutes: 40,
     image: null,
     ingredients: [
@@ -151,6 +175,7 @@ export const recipes: Recipe[] = [
     id: 'spaghetti',
     title: 'Spaghetti bolognese',
     subtitle: 'Vertrouwd comfortfood voor een rustige avond',
+    category: defaultRecipeCategory,
     minutes: 45,
     image: null,
     ingredients: [

@@ -56,7 +56,7 @@ export default function RecipeDetailScreen() {
         showsVerticalScrollIndicator={false}>
         <RecipeImage recipe={recipe} style={styles.heroImage} />
 
-        <Text style={styles.eyebrow}>GERECHT</Text>
+        <Text style={styles.eyebrow}>{recipe.category.toLocaleUpperCase('nl')}</Text>
         <Text style={styles.title}>{recipe.title}</Text>
         <Text style={styles.subtitle}>{recipe.subtitle}</Text>
 

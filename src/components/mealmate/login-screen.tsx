@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -46,6 +47,21 @@ export function LoginScreen() {
   const [emailMode, setEmailMode] = useState<EmailMode>('login');
   const [isEmailBusy, setIsEmailBusy] = useState(false);
   const [password, setPassword] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const signIn = async (provider: Provider) => {
     setActiveProvider(provider);
@@ -103,6 +119,7 @@ export function LoginScreen() {
         style={styles.keyboardAvoider}>
         <ScrollView
           contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
           <View style={styles.brandBlock}>
@@ -186,22 +203,14 @@ export function LoginScreen() {
               textContentType={emailMode === 'login' ? 'password' : 'newPassword'}
             />
 
-            <Pressable
-              accessibilityRole="button"
-              disabled={isBusy}
-              onPress={() => void submitEmail()}
-              style={({ pressed }) => [
-                styles.emailButton,
-                (pressed || isBusy) && styles.pressed,
-              ]}>
-              {isEmailBusy ? (
-                <ActivityIndicator color={palette.white} />
-              ) : (
-                <Text style={styles.emailButtonText}>
-                  {emailMode === 'login' ? 'Inloggen met e-mail' : 'Testaccount maken'}
-                </Text>
-              )}
-            </Pressable>
+            {keyboardHeight === 0 ? (
+              <EmailSubmitButton
+                emailMode={emailMode}
+                isBusy={isBusy}
+                isEmailBusy={isEmailBusy}
+                onPress={() => void submitEmail()}
+              />
+            ) : null}
 
             <View style={styles.dividerRow}>
               <View style={styles.divider} />
@@ -254,7 +263,52 @@ export function LoginScreen() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
+      {keyboardHeight > 0 ? (
+        <View style={[styles.floatingFooter, { bottom: keyboardHeight }]}>
+          <EmailSubmitButton
+            emailMode={emailMode}
+            floating
+            isBusy={isBusy}
+            isEmailBusy={isEmailBusy}
+            onPress={() => void submitEmail()}
+          />
+        </View>
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+function EmailSubmitButton({
+  emailMode,
+  floating = false,
+  isBusy,
+  isEmailBusy,
+  onPress,
+}: {
+  emailMode: EmailMode;
+  floating?: boolean;
+  isBusy: boolean;
+  isEmailBusy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={isBusy}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.emailButton,
+        floating && styles.floatingEmailButton,
+        (pressed || isBusy) && styles.pressed,
+      ]}>
+      {isEmailBusy ? (
+        <ActivityIndicator color={palette.white} />
+      ) : (
+        <Text style={styles.emailButtonText}>
+          {emailMode === 'login' ? 'Inloggen met e-mail' : 'Testaccount maken'}
+        </Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -270,7 +324,7 @@ export function AuthLoadingScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: palette.background },
   keyboardAvoider: { flex: 1 },
-  content: { flexGrow: 1, padding: spacing.xl, paddingBottom: spacing.xxl },
+  content: { flexGrow: 1, padding: spacing.xl, paddingBottom: 104 },
   brandBlock: { alignItems: 'flex-start' },
   tagline: { color: palette.textMuted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   hero: { marginTop: 58 },
@@ -301,7 +355,19 @@ const styles = StyleSheet.create({
   modeTextSelected: { color: palette.text },
   input: { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: radius.md, borderWidth: 1, color: palette.text, fontSize: 15, marginTop: spacing.md, minHeight: 54, paddingHorizontal: spacing.lg },
   emailButton: { alignItems: 'center', backgroundColor: palette.sageDark, borderRadius: radius.pill, justifyContent: 'center', marginTop: spacing.lg, minHeight: 56 },
+  floatingEmailButton: { marginTop: 0 },
   emailButtonText: { color: palette.white, fontSize: 15, fontWeight: '700' },
+  floatingFooter: {
+    backgroundColor: palette.background,
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    left: 0,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    position: 'absolute',
+    right: 0,
+    zIndex: 10,
+  },
   legal: { color: palette.textSoft, fontSize: 10, lineHeight: 15, marginTop: spacing.xl, textAlign: 'center' },
   pressed: { opacity: 0.7 },
   loadingScreen: { alignItems: 'center', backgroundColor: palette.background, flex: 1, justifyContent: 'center' },

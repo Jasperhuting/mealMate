@@ -34,10 +34,12 @@ export default function AddShoppingItemScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardWillShow', (event) => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
       setKeyboardHeight(event.endCoordinates.height);
     });
-    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
       setKeyboardHeight(0);
     });
 
@@ -56,6 +58,11 @@ export default function AddShoppingItemScreen() {
     }
 
     router.replace('/shopping');
+  };
+
+  const chooseDepartment = () => {
+    router.push('/select-shopping-department');
+    requestAnimationFrame(() => Keyboard.dismiss());
   };
 
   const save = async () => {
@@ -103,14 +110,19 @@ export default function AddShoppingItemScreen() {
           <ScrollView
             style={styles.formScroll}
             contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator={false}>
-            <Text style={styles.eyebrow}>LOSSE BOODSCHAP</Text>
-            <Text style={styles.title}>Wat wil je toevoegen?</Text>
-            <Text style={styles.subtitle}>
-              Voor producten die niet uit een gepland gerecht komen, zoals koffie of fruit voor
-              tussendoor.
-            </Text>
+            {keyboardHeight === 0 ? (
+              <>
+                <Text style={styles.eyebrow}>LOSSE BOODSCHAP</Text>
+                <Text style={styles.title}>Wat wil je toevoegen?</Text>
+                <Text style={styles.subtitle}>
+                  Voor producten die niet uit een gepland gerecht komen, zoals koffie of fruit voor
+                  tussendoor.
+                </Text>
+              </>
+            ) : null}
 
             <View style={styles.formCard}>
               <Text style={styles.label}>Product</Text>
@@ -150,32 +162,7 @@ export default function AddShoppingItemScreen() {
               </View>
 
               <Text style={[styles.label, styles.departmentLabel]}>Afdeling</Text>
-              <Pressable
-                onPress={() => {
-                  Keyboard.dismiss();
-                  router.push('/select-shopping-department');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Afdeling kiezen"
-                accessibilityValue={{ text: department }}
-                accessibilityHint="Opent de lijst met winkelafdelingen"
-                style={({ pressed }) => [styles.departmentField, pressed && styles.pressed]}>
-                <View style={styles.departmentFieldIcon}>
-                  <AppIcon
-                    name={{ ios: 'square.grid.2x2', android: 'category', web: 'category' }}
-                    tintColor={palette.sageDark}
-                    size={18}
-                  />
-                </View>
-                <Text style={styles.departmentFieldText} numberOfLines={2}>
-                  {department}
-                </Text>
-                <AppIcon
-                  name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-                  tintColor={palette.textSoft}
-                  size={17}
-                />
-              </Pressable>
+              <DepartmentField department={department} onPress={chooseDepartment} />
             </View>
           </ScrollView>
           {Platform.OS !== 'ios' || keyboardHeight === 0 ? (
@@ -193,6 +180,34 @@ export default function AddShoppingItemScreen() {
         ) : null}
       </SafeAreaView>
     </>
+  );
+}
+
+function DepartmentField({ department, onPress }: { department: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Afdeling kiezen"
+      accessibilityValue={{ text: department }}
+      accessibilityHint="Opent de lijst met winkelafdelingen"
+      style={({ pressed }) => [styles.departmentField, pressed && styles.pressed]}>
+      <View style={styles.departmentFieldIcon}>
+        <AppIcon
+          name={{ ios: 'square.grid.2x2', android: 'category', web: 'category' }}
+          tintColor={palette.sageDark}
+          size={18}
+        />
+      </View>
+      <Text style={styles.departmentFieldText} numberOfLines={2}>
+        {department}
+      </Text>
+      <AppIcon
+        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+        tintColor={palette.textSoft}
+        size={17}
+      />
+    </Pressable>
   );
 }
 
